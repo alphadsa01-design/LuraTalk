@@ -232,22 +232,18 @@ function MatchPageContent() {
     const unsubPeerLeft = socketClient.on('match:peer_left', () => {
       webrtcEngine.cleanup();
       sounds.playEndCall();
-      if (useCallStore.getState().autoConnectNext) {
-        setFriendRequested(false);
-        resetCall();
-        setStatus('searching');
-        socketClient.nextMatch(useCallStore.getState().mode || 'voice', {
-          nativeLanguage,
-          targetLanguages,
-          interests,
-          mood,
-          intention,
-          countryPreference,
-          oneQuestionAnswer,
-        });
-      } else {
-        setStatus('disconnected');
-      }
+      setFriendRequested(false);
+      resetCall();
+      setStatus('searching');
+      socketClient.nextMatch(useCallStore.getState().mode || 'voice', {
+        nativeLanguage,
+        targetLanguages,
+        interests,
+        mood,
+        intention,
+        countryPreference,
+        oneQuestionAnswer,
+      });
     });
 
     const unsubChat = socketClient.on('chat:message', (payload: any) => {
@@ -327,10 +323,18 @@ function MatchPageContent() {
     sounds.playEndCall();
     webrtcEngine.cleanup();
     socketClient.send('call:end', {});
-    socketClient.leaveQueue();
+    setFriendRequested(false);
     resetCall();
-    setStatus('idle');
-    router.push('/');
+    setStatus('searching');
+    socketClient.nextMatch(mode, {
+      nativeLanguage,
+      targetLanguages,
+      interests,
+      mood,
+      intention,
+      countryPreference,
+      oneQuestionAnswer,
+    });
   };
 
   const handleCancelSearch = () => {
@@ -347,8 +351,18 @@ function MatchPageContent() {
   };
 
   const handleSendMessage = (content: string) => {
+    if (!content.trim()) return;
+    const trimmed = content.trim();
+    const tempId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    addMessage({
+      id: tempId,
+      senderId: user?.id || 'me',
+      senderName: user?.username || 'You',
+      content: trimmed,
+      timestamp: Date.now(),
+    });
     socketClient.sendChat(
-      content,
+      trimmed,
       nativeLanguage,
       targetTranslationLanguage,
       enableLiveTranslation

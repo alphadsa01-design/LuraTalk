@@ -110,7 +110,13 @@ export const useCallStore = create<CallState>((set) => ({
   setSpeaking: (speaking) => set({ isSpeaking: speaking }),
   setPeerSpeaking: (speaking) => set({ peerSpeaking: speaking }),
   incrementDuration: () => set((state) => ({ callDuration: state.callDuration + 1 })),
-  addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
+  addMessage: (msg) =>
+    set((state) => {
+      if (state.messages.some((m) => m.id === msg.id)) {
+        return state;
+      }
+      return { messages: [...state.messages, msg] };
+    }),
   setPeerTyping: (typing) => set({ isPeerTyping: typing }),
   updateMysteryLevel: (level) =>
     set((state) => ({
