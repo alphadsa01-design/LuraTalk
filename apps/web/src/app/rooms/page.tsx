@@ -22,6 +22,7 @@ import {
 import { fetchTopicRooms, createTopicRoom, fetchRoomToken, getOrCreateAnonymousSession } from '@/lib/api';
 import { useUserStore, getDicebearAvatarUrl } from '@/stores/useUserStore';
 import { socketClient } from '@/lib/socket';
+import { webrtcEngine } from '@/lib/webrtc';
 import { sounds } from '@/lib/sounds';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -40,6 +41,7 @@ interface StagePeer {
   username: string;
   avatarId?: string;
   isMuted?: boolean;
+  isSpeaking?: boolean;
 }
 
 interface ReactionParticle {
@@ -61,6 +63,8 @@ export default function RoomsPage() {
   const [activeStage, setActiveStage] = useState<{ room: RoomItem; token: string; roomName: string } | null>(null);
   const [stagePeers, setStagePeers] = useState<StagePeer[]>([]);
   const [isStageMuted, setIsStageMuted] = useState(false);
+  const [isSelfSpeaking, setIsSelfSpeaking] = useState(false);
+  const [isPeerSpeaking, setIsPeerSpeaking] = useState(false);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [reactions, setReactions] = useState<ReactionParticle[]>([]);
 
@@ -85,12 +89,40 @@ export default function RoomsPage() {
     loadRooms();
   }, []);
 
+  // Sync mute state with WebRTC audio engine
+  useEffect(() => {
+    webrtcEngine.setMuted(isStageMuted);
+  }, [isStageMuted]);
+
+  // Auto-resume audio context when entering stage
+  useEffect(() => {
+    if (activeStage) {
+      webrtcEngine.resumeAudio();
+      const resume = () => webrtcEngine.resumeAudio();
+      window.addEventListener('click', resume, { once: true });
+      window.addEventListener('touchstart', resume, { once: true });
+      return () => {
+        window.removeEventListener('click', resume);
+        window.removeEventListener('touchstart', resume);
+      };
+    }
+  }, [activeStage]);
+
   // Listen to WebSocket lounge events continuously on mount
   useEffect(() => {
     const unsubPeers = socketClient.on('lounge:peers', (data: { roomName: string; peers: StagePeer[] }) => {
       console.log('[Lounge] Received stage peers:', data);
       if (data?.peers) {
         setStagePeers(data.peers);
+        if (data.peers.length > 0) {
+          // Initiate WebRTC call with existing peers in the lounge
+          webrtcEngine.startCall({
+            isInitiator: true,
+            onSpeakingChange: (speaking) => setIsSelfSpeaking(speaking),
+            onPeerSpeakingChange: (speaking) => setIsPeerSpeaking(speaking),
+            onError: (err) => console.warn('[Lounge] WebRTC call error:', err),
+          });
+        }
       }
     });
 
@@ -102,12 +134,26 @@ export default function RoomsPage() {
         if (prev.some((p) => p.id === peer.id)) return prev;
         return [...prev, peer];
       });
+
+      // Answer incoming WebRTC call from new joining peer
+      webrtcEngine.startCall({
+        isInitiator: false,
+        onSpeakingChange: (speaking) => setIsSelfSpeaking(speaking),
+        onPeerSpeakingChange: (speaking) => setIsPeerSpeaking(speaking),
+        onError: (err) => console.warn('[Lounge] WebRTC call error:', err),
+      });
     });
 
     const unsubPeerLeft = socketClient.on('lounge:peer_left', (data: { userId: string; username: string }) => {
       console.log('[Lounge] Peer left stage:', data);
       if (!data?.userId) return;
-      setStagePeers((prev) => prev.filter((p) => p.id !== data.userId));
+      setStagePeers((prev) => {
+        const remaining = prev.filter((p) => p.id !== data.userId);
+        if (remaining.length === 0) {
+          webrtcEngine.cleanup();
+        }
+        return remaining;
+      });
     });
 
     const unsubReaction = socketClient.on('lounge:reaction', (data: { emoji: string; userId: string; username: string }) => {
@@ -147,10 +193,12 @@ export default function RoomsPage() {
     if (!activeToken) return;
 
     const roomName = `lounge_${room.id.slice(0, 8)}`;
-    // Set active stage immediately so UI transitions instantly
     setActiveStage({ room, token: 'connecting', roomName });
     setIsHandRaised(false);
     setStagePeers([]);
+
+    // Pre-warm microphone for instant stage voice
+    webrtcEngine.warmupMicrophone().catch(() => {});
 
     socketClient.connect(activeToken);
     socketClient.joinLounge(room.id, roomName);
@@ -165,10 +213,13 @@ export default function RoomsPage() {
 
   const handleLeaveStage = () => {
     sounds.playEndCall();
+    webrtcEngine.cleanup();
     socketClient.leaveLounge();
     setActiveStage(null);
     setStagePeers([]);
     setIsHandRaised(false);
+    setIsSelfSpeaking(false);
+    setIsPeerSpeaking(false);
   };
 
   const handleTriggerReaction = (emoji: string) => {
@@ -356,14 +407,20 @@ export default function RoomsPage() {
                 {/* Active Current User on Stage */}
                 <div className="p-4 rounded-2xl bg-surfaceLight/80 border border-secondary/40 flex flex-col items-center text-center space-y-2 relative shadow-lg shadow-secondary/5">
                   <div className="relative">
-                    <div className={`w-14 h-14 rounded-full bg-surface border-2 ${isStageMuted ? 'border-gray-500' : 'border-secondary ring-4 ring-secondary/20 animate-pulse'} overflow-hidden flex items-center justify-center`}>
+                    <div className={`w-14 h-14 rounded-full bg-surface border-2 transition-all duration-200 ${
+                      isStageMuted
+                        ? 'border-gray-500 opacity-80'
+                        : isSelfSpeaking
+                        ? 'border-emerald-400 ring-4 ring-emerald-400/50 scale-105 shadow-lg shadow-emerald-500/20'
+                        : 'border-secondary ring-2 ring-secondary/20'
+                    } overflow-hidden flex items-center justify-center`}>
                       <img
                         src={getDicebearAvatarUrl(user?.avatarId || user?.username || 'Host')}
                         alt="You"
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <span className={`absolute -bottom-1 -right-1 p-1 rounded-full text-[9px] font-bold shadow ${isStageMuted ? 'bg-rose-500 text-white' : 'bg-secondary text-black'}`}>
+                    <span className={`absolute -bottom-1 -right-1 p-1 rounded-full text-[9px] font-bold shadow ${isStageMuted ? 'bg-rose-500 text-white' : isSelfSpeaking ? 'bg-emerald-400 text-black animate-bounce' : 'bg-secondary text-black'}`}>
                       {isStageMuted ? '🔇' : '🎙️'}
                     </span>
                   </div>
@@ -372,8 +429,14 @@ export default function RoomsPage() {
                       <span className="truncate max-w-[90px]">{user?.username || 'You'}</span>
                       <span className="text-[10px] text-secondary font-normal">(You)</span>
                     </p>
-                    <span className={`text-[10px] font-mono ${isStageMuted ? 'text-gray-400' : 'text-emerald-400'}`}>
-                      {isStageMuted ? 'Muted' : 'Mic Active'}
+                    <span className={`text-[10px] font-mono font-medium ${
+                      isStageMuted
+                        ? 'text-gray-400'
+                        : isSelfSpeaking
+                        ? 'text-emerald-400 animate-pulse font-bold'
+                        : 'text-emerald-300/80'
+                    }`}>
+                      {isStageMuted ? 'Muted' : isSelfSpeaking ? 'Speaking...' : 'Mic Ready'}
                     </span>
                   </div>
                 </div>
@@ -385,20 +448,26 @@ export default function RoomsPage() {
                     className="p-4 rounded-2xl bg-surfaceLight/60 border border-cyan-500/30 flex flex-col items-center text-center space-y-2 relative shadow-lg animate-fadeIn"
                   >
                     <div className="relative">
-                      <div className="w-14 h-14 rounded-full bg-surface border-2 border-cyan-400/80 ring-4 ring-cyan-400/20 animate-pulse overflow-hidden flex items-center justify-center">
+                      <div className={`w-14 h-14 rounded-full bg-surface border-2 transition-all duration-200 ${
+                        isPeerSpeaking
+                          ? 'border-cyan-400 ring-4 ring-cyan-400/50 scale-105 shadow-lg shadow-cyan-500/25'
+                          : 'border-cyan-400/80 ring-2 ring-cyan-400/20'
+                      } overflow-hidden flex items-center justify-center`}>
                         <img
                           src={getDicebearAvatarUrl(peer.avatarId || peer.username)}
                           alt={peer.username}
                           className="w-full h-full object-cover"
                         />
                       </div>
-                      <span className="absolute -bottom-1 -right-1 p-1 rounded-full bg-cyan-400 text-black text-[9px] font-bold shadow">
+                      <span className={`absolute -bottom-1 -right-1 p-1 rounded-full text-[9px] font-bold shadow ${isPeerSpeaking ? 'bg-cyan-300 text-black animate-bounce' : 'bg-cyan-500 text-black'}`}>
                         🎙️
                       </span>
                     </div>
                     <div>
                       <p className="text-xs font-bold text-white truncate max-w-[100px]">{peer.username}</p>
-                      <span className="text-[10px] text-cyan-300 font-mono">Connected</span>
+                      <span className={`text-[10px] font-mono ${isPeerSpeaking ? 'text-cyan-300 font-bold animate-pulse' : 'text-gray-400'}`}>
+                        {isPeerSpeaking ? 'Speaking...' : 'Listening'}
+                      </span>
                     </div>
                   </div>
                 ))}
