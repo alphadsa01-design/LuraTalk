@@ -1,0 +1,9 @@
+node_modules
+apps/web/node_modules
+apps/web/.next
+services/api/auravoice.db*
+*.db
+dump.rdb
+.git
+.env*
+.DS_Store

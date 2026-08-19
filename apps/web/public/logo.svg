@@ -1,0 +1,34 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#090a0f" stop-opacity="1"/>
+    </radialGradient>
+    <linearGradient id="luraGrad" x1="60" y1="60" x2="450" y2="450" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="50%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+    <linearGradient id="barGrad1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dark Rounded Container -->
+  <rect width="512" height="512" rx="128" fill="#090a0f"/>
+  <rect width="512" height="512" rx="128" fill="url(#bgGlow)"/>
+  <rect x="8" y="8" width="496" height="496" rx="120" stroke="url(#luraGrad)" stroke-width="4" stroke-opacity="0.4"/>
+
+  <!-- Futuristic "L" Waveform Spine -->
+  <path d="M140 110 V340 C140 375.346 168.654 404 204 404 H372" stroke="url(#luraGrad)" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Audio Equalizer Bars -->
+  <rect x="230" y="210" width="38" height="130" rx="19" fill="url(#barGrad1)"/>
+  <rect x="294" y="160" width="38" height="180" rx="19" fill="url(#luraGrad)"/>
+  <rect x="358" y="240" width="38" height="100" rx="19" fill="#ec4899"/>
+
+  <!-- Live Pulse Beacon -->
+  <circle cx="140" cy="110" r="32" fill="#38bdf8" fill-opacity="0.4"/>
+  <circle cx="140" cy="110" r="20" fill="#ffffff"/>
+</svg>

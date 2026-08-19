@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Persistent Relational Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: auravoice-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: auravoice
+      POSTGRES_USER: aura_user
+      POSTGRES_PASSWORD: aura_secure_password_2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aura_user -d auravoice"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis In-Memory Ephemeral Cache & Matchmaking Queues
+  redis:
+    image: redis:7-alpine
+    container_name: auravoice-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # LiveKit SFU Real-Time Media Server
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: auravoice-livekit
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+
+  # Go Modular Backend API & WebSocket Hub
+  api:
+    build:
+      context: ../../services/api
+      dockerfile: ../../infra/docker/Dockerfile.api
+    container_name: auravoice-api
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://aura_user:aura_secure_password_2026@postgres:5432/auravoice?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+      JWT_SECRET: "aura_voice_super_secure_jwt_secret_key_2026"
+      LIVEKIT_HOST: "http://localhost:7880"
+      LIVEKIT_API_KEY: "devkey"
+      LIVEKIT_API_SECRET: "secret_livekit_key_aura_voice_dev"
+      ADMIN_API_KEY: "aura_admin_master_secret_key_2026"
+      ENV: "production"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+
+  # Next.js Web Frontend
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: ../../infra/docker/Dockerfile.web
+    container_name: auravoice-web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:8080"
+      NEXT_PUBLIC_WS_URL: "ws://localhost:8080/ws"
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:

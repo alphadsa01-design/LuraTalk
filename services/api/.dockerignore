@@ -1,0 +1,8 @@
+auravoice-api
+auravoice.db*
+*.db
+dump.rdb
+.git
+.env*
+data/uploads/*
+.DS_Store
