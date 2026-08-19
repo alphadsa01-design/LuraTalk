@@ -78,16 +78,12 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 
-	// OWASP Security Defense & DoS Protections
-	r.Use(apimw.SecurityHeaders)
-	r.Use(apimw.RequestSizeLimiter(3 * 1024 * 1024)) // 3MB Max Request Body (Supports up to 2MB media uploads)
-	ipLimiter := apimw.NewIPRateLimiter(120, time.Minute)
-	r.Use(ipLimiter.Middleware)
-
-	// CORS Allowlist Defense
+	// CORS Allowlist Defense (Executed before security headers)
 	corsOpts := cors.Options{
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Admin-Key"},
+		AllowedOrigins:   []string{"https://*", "http://*"},
+		AllowOriginFunc:  func(r *http.Request, origin string) bool { return true },
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Admin-Key", "Origin"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -99,13 +95,15 @@ func main() {
 			origins[i] = strings.TrimSpace(origins[i])
 		}
 		corsOpts.AllowedOrigins = origins
-	} else {
-		corsOpts.AllowOriginFunc = func(r *http.Request, origin string) bool {
-			return true
-		}
 	}
 
 	r.Use(cors.Handler(corsOpts))
+
+	// OWASP Security Defense & DoS Protections
+	r.Use(apimw.SecurityHeaders)
+	r.Use(apimw.RequestSizeLimiter(3 * 1024 * 1024)) // 3MB Max Request Body
+	ipLimiter := apimw.NewIPRateLimiter(120, time.Minute)
+	r.Use(ipLimiter.Middleware)
 
 	// Root API Info & Status
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {

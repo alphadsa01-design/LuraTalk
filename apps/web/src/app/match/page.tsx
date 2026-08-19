@@ -647,7 +647,28 @@ function MatchPageContent() {
               />
             </div>
           </div>
-        ) : null}
+        ) : (
+          <div className="w-full h-[240px] sm:h-[320px] rounded-3xl glass-panel-glow flex flex-col items-center justify-center text-center p-6 space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary to-secondary p-0.5 shadow-lg shadow-primary/30 flex items-center justify-center">
+              <div className="w-full h-full rounded-[14px] bg-background/90 flex items-center justify-center text-secondary">
+                <Radio className="w-8 h-8 animate-pulse" />
+              </div>
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white">Ready for a Voice Match?</h3>
+              <p className="text-xs text-gray-400 mt-1 max-w-xs">
+                Tap below to instantly connect with someone based on shared vibe.
+              </p>
+            </div>
+            <button
+              onClick={() => handleStartQueue(initialMode)}
+              className="px-6 py-3 rounded-2xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-bold shadow-xl shadow-primary/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+            >
+              <Radio className="w-4 h-4 animate-spin" />
+              <span>Start Voice Match</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Slide-over Text Channel Modal */}
