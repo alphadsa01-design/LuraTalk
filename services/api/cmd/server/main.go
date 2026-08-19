@@ -85,36 +85,39 @@ func main() {
 	r.Use(ipLimiter.Middleware)
 
 	// CORS Allowlist Defense
-	allowedOrigins := []string{"http://localhost:3000", "http://127.0.0.1:3000"}
-	if cfg.CORSAllowedOrigins != "" && cfg.CORSAllowedOrigins != "*" {
-		allowedOrigins = strings.Split(cfg.CORSAllowedOrigins, ",")
-		for i := range allowedOrigins {
-			allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
-		}
-	} else if cfg.Environment == "production" {
-		allowedOrigins = []string{"https://auravoice.app"}
-	}
-
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   allowedOrigins,
+	corsOpts := cors.Options{
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Admin-Key"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
-	}))
+	}
+
+	if cfg.CORSAllowedOrigins != "" && cfg.CORSAllowedOrigins != "*" {
+		origins := strings.Split(cfg.CORSAllowedOrigins, ",")
+		for i := range origins {
+			origins[i] = strings.TrimSpace(origins[i])
+		}
+		corsOpts.AllowedOrigins = origins
+	} else {
+		corsOpts.AllowOriginFunc = func(r *http.Request, origin string) bool {
+			return true
+		}
+	}
+
+	r.Use(cors.Handler(corsOpts))
 
 	// Health Check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"healthy","service":"auravoice-api","timestamp":%d}`, time.Now().UnixMilli())
+		fmt.Fprintf(w, `{"status":"healthy","service":"luratalk-api","timestamp":%d}`, time.Now().UnixMilli())
 	})
 
 	// WebSocket Endpoint
 	r.Get("/ws", hub.ServeWS)
 
-	// REST API v1
-	r.Route("/api/v1", func(api chi.Router) {
+	// Define API v1 Handlers
+	registerAPIRoutes := func(api chi.Router) {
 		// Auth
 		api.Post("/auth/anonymous", h.CreateAnonymousSession)
 		api.Post("/auth/upgrade", h.UpgradeAccount)
@@ -154,7 +157,12 @@ func main() {
 		api.Post("/admin/rooms", h.AdminCreateRoom)
 		api.Delete("/admin/rooms/{id}", h.AdminDeleteRoom)
 		api.Post("/admin/users/{id}/revoke", h.AdminRevokeUser)
-	})
+	}
+
+	// Mount REST API routes at both /api/v1 and /api/api/v1 (for multi-service proxies)
+	r.Route("/api/v1", registerAPIRoutes)
+	r.Route("/api/api/v1", registerAPIRoutes)
+	r.Route("/v1", registerAPIRoutes)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
