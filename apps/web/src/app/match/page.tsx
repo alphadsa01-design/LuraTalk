@@ -354,9 +354,10 @@ function MatchPageContent() {
     if (!content.trim()) return;
     const trimmed = content.trim();
     const tempId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const myId = user?.id || 'me';
     addMessage({
       id: tempId,
-      senderId: user?.id || 'me',
+      senderId: myId,
       senderName: user?.username || 'You',
       content: trimmed,
       timestamp: Date.now(),
@@ -365,7 +366,8 @@ function MatchPageContent() {
       trimmed,
       nativeLanguage,
       targetTranslationLanguage,
-      enableLiveTranslation
+      enableLiveTranslation,
+      tempId
     );
   };
 

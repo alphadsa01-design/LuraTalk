@@ -133,8 +133,8 @@ class AuraSocketClient {
     this.send('match:next', { mode, preferences });
   }
 
-  public sendChat(content: string, sourceLang?: string, targetLang?: string, enableTranslation?: boolean) {
-    this.send('chat:send', { content, sourceLang, targetLang, enableTranslation });
+  public sendChat(content: string, sourceLang?: string, targetLang?: string, enableTranslation?: boolean, id?: string) {
+    this.send('chat:send', { id, content, sourceLang, targetLang, enableTranslation });
   }
 
   public sendTyping() {

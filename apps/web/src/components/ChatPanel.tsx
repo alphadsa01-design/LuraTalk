@@ -62,14 +62,21 @@ export default function ChatPanel({
           </div>
         ) : (
           messages.map((msg) => {
-            const isMe = msg.senderId === currentUserId;
+            const isMe =
+              msg.senderId === currentUserId ||
+              msg.senderId === 'me' ||
+              msg.senderName === 'You' ||
+              (currentUserId && msg.senderId === currentUserId);
+            const displayName = isMe ? 'You' : msg.senderName || 'Peer';
             return (
               <div
                 key={msg.id}
                 className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
               >
                 <div className="flex items-center gap-1.5 mb-1 px-1">
-                  <span className="text-[10px] text-gray-400 font-medium">{msg.senderName}</span>
+                  <span className={`text-[10px] font-semibold ${isMe ? 'text-indigo-300' : 'text-gray-400'}`}>
+                    {displayName}
+                  </span>
                   <span className="text-[9px] text-gray-500">
                     {(() => {
                       try {

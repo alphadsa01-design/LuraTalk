@@ -612,6 +612,7 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			return
 		}
 		var payload struct {
+			ID                string `json:"id"`
 			Content           string `json:"content"`
 			SourceLang        string `json:"sourceLang"`
 			TargetLang        string `json:"targetLang"`
@@ -650,8 +651,13 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			isTranslated = true
 		}
 
+		msgID := payload.ID
+		if msgID == "" {
+			msgID = uuid.New().String()
+		}
+
 		chatMsg := map[string]interface{}{
-			"id":                uuid.New().String(),
+			"id":                msgID,
 			"conversationId":    client.ActiveRoom,
 			"senderId":          client.UserID,
 			"senderName":        client.Username,
