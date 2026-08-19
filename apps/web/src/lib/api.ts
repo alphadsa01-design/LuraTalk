@@ -1,8 +1,8 @@
 function getApiBase(): string {
   let url = process.env.NEXT_PUBLIC_API_URL;
   if (!url) {
-    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      url = 'https://luratalk.onrender.com';
+    if (typeof window !== 'undefined') {
+      url = window.location.origin;
     } else {
       url = 'http://localhost:8080';
     }

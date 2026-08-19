@@ -80,20 +80,15 @@ func main() {
 
 	// CORS Allowlist Defense (Executed before security headers)
 	corsOpts := cors.Options{
-		AllowedOrigins:   []string{"https://luratalk.vercel.app", "http://localhost:3000", "http://127.0.0.1:3000"},
+		AllowedOrigins: []string{"*"},
+		AllowOriginFunc: func(r *http.Request, origin string) bool {
+			return true // Support Vercel deployments, custom domains, and local testing
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Admin-Key", "Origin"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
-	}
-
-	if cfg.CORSAllowedOrigins != "" && cfg.CORSAllowedOrigins != "*" {
-		origins := strings.Split(cfg.CORSAllowedOrigins, ",")
-		for i := range origins {
-			origins[i] = strings.TrimSpace(origins[i])
-		}
-		corsOpts.AllowedOrigins = origins
 	}
 
 	r.Use(cors.Handler(corsOpts))
