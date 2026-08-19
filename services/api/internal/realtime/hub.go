@@ -178,16 +178,48 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 		return
 	}
 
+	// Evict Client A from any prior room to prevent multi-user audio mixing
+	if clientA.ActiveRoom != "" && clientA.ActiveRoom != pair.RoomName {
+		if prevRoom, ok := h.Rooms[clientA.ActiveRoom]; ok {
+			delete(prevRoom, clientA.UserID)
+			for _, peer := range prevRoom {
+				peer.SendJSON("match:peer_left", map[string]string{
+					"userId": clientA.UserID,
+					"reason": "matched_elsewhere",
+				})
+			}
+			if len(prevRoom) == 0 {
+				delete(h.Rooms, clientA.ActiveRoom)
+			}
+		}
+	}
+
+	// Evict Client B from any prior room to prevent multi-user audio mixing
+	if clientB.ActiveRoom != "" && clientB.ActiveRoom != pair.RoomName {
+		if prevRoom, ok := h.Rooms[clientB.ActiveRoom]; ok {
+			delete(prevRoom, clientB.UserID)
+			for _, peer := range prevRoom {
+				peer.SendJSON("match:peer_left", map[string]string{
+					"userId": clientB.UserID,
+					"reason": "matched_elsewhere",
+				})
+			}
+			if len(prevRoom) == 0 {
+				delete(h.Rooms, clientB.ActiveRoom)
+			}
+		}
+	}
+
 	clientA.ActiveRoom = pair.RoomName
 	clientB.ActiveRoom = pair.RoomName
 	clientA.MysteryLevel = 1
 	clientB.MysteryLevel = 1
 
-	if h.Rooms[pair.RoomName] == nil {
-		h.Rooms[pair.RoomName] = make(map[string]*Client)
+	// Ensure the 1-on-1 room starts fresh with exactly these two users
+	h.Rooms[pair.RoomName] = map[string]*Client{
+		clientA.UserID: clientA,
+		clientB.UserID: clientB,
 	}
-	h.Rooms[pair.RoomName][clientA.UserID] = clientA
-	h.Rooms[pair.RoomName][clientB.UserID] = clientB
 	h.mu.Unlock()
 
 	// Mint short-lived LiveKit audio tokens
@@ -278,6 +310,25 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			})
 			return
 		}
+
+		// Ensure client is completely evicted from any active room before queueing
+		h.mu.Lock()
+		if prevRoom := client.ActiveRoom; prevRoom != "" {
+			if roomClients, exists := h.Rooms[prevRoom]; exists {
+				delete(roomClients, client.UserID)
+				for _, peer := range roomClients {
+					peer.SendJSON("match:peer_left", map[string]string{
+						"userId": client.UserID,
+						"reason": "requeued",
+					})
+				}
+				if len(roomClients) == 0 {
+					delete(h.Rooms, prevRoom)
+				}
+			}
+			client.ActiveRoom = ""
+		}
+		h.mu.Unlock()
 
 		var ticket matchmaking.MatchTicket
 		if err := json.Unmarshal(msg.Payload, &ticket); err == nil {
