@@ -90,6 +90,19 @@ export async function fetchTopicRooms() {
   return res.json();
 }
 
+export async function createTopicRoom(token: string, payload: { title: string; topic: string; description: string; tags?: string[]; maxParticipants?: number }) {
+  const res = await fetch(`${API_BASE}/api/v1/rooms`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to create topic room');
+  return res.json();
+}
+
 export async function fetchRoomToken(token: string, roomId: string) {
   const res = await fetch(`${API_BASE}/api/v1/rooms/${roomId}/token`, {
     headers: { Authorization: `Bearer ${token}` },

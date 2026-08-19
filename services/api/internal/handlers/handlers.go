@@ -243,9 +243,60 @@ func (h *Handler) GetRoomToken(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"roomName":     roomName,
 		"livekitToken": lkToken,
-		"livekitUrl":  h.LiveKitGen.GetLiveKitURL(),
+		"livekitUrl":   h.LiveKitGen.GetLiveKitURL(),
 		"room":         room,
 	})
+}
+
+func (h *Handler) CreateRoom(w http.ResponseWriter, r *http.Request) {
+	tokenStr := auth.ExtractTokenFromRequest(r)
+	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		Title           string   `json:"title"`
+		Topic           string   `json:"topic"`
+		Description     string   `json:"description"`
+		MaxParticipants int      `json:"maxParticipants"`
+		Tags            []string `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Title == "" {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	userUUID, _ := uuid.Parse(claims.UserID)
+	if req.MaxParticipants <= 0 || req.MaxParticipants > 50 {
+		req.MaxParticipants = 15
+	}
+	if req.Topic == "" {
+		req.Topic = "Chill"
+	}
+
+	room := models.Room{
+		ID:                  uuid.New(),
+		Title:               req.Title,
+		Topic:               req.Topic,
+		Description:         req.Description,
+		MaxParticipants:     req.MaxParticipants,
+		CurrentParticipants: 1,
+		IsActive:            true,
+		CreatedBy:           userUUID,
+		Tags:                models.StringArray(req.Tags),
+		CreatedAt:           time.Now().UTC(),
+	}
+
+	if err := database.DB.Create(&room).Error; err != nil {
+		http.Error(w, "Failed to create room", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(room)
 }
 
 func (h *Handler) GetFriends(w http.ResponseWriter, r *http.Request) {

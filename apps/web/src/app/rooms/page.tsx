@@ -19,8 +19,9 @@ import {
   Rocket,
   Check,
 } from 'lucide-react';
-import { fetchTopicRooms, fetchRoomToken, getOrCreateAnonymousSession } from '@/lib/api';
+import { fetchTopicRooms, createTopicRoom, fetchRoomToken, getOrCreateAnonymousSession } from '@/lib/api';
 import { useUserStore, getDicebearAvatarUrl } from '@/stores/useUserStore';
+import { socketClient } from '@/lib/socket';
 import { sounds } from '@/lib/sounds';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -32,6 +33,13 @@ interface RoomItem {
   maxParticipants: number;
   currentParticipants: number;
   tags: string[];
+}
+
+interface StagePeer {
+  id: string;
+  username: string;
+  avatarId?: string;
+  isMuted?: boolean;
 }
 
 interface ReactionParticle {
@@ -50,7 +58,8 @@ export default function RoomsPage() {
   const [selectedCategory, setSelectedCategory] = useState('All');
 
   // Stage state
-  const [activeStage, setActiveStage] = useState<{ room: RoomItem; token: string } | null>(null);
+  const [activeStage, setActiveStage] = useState<{ room: RoomItem; token: string; roomName: string } | null>(null);
+  const [stagePeers, setStagePeers] = useState<StagePeer[]>([]);
   const [isStageMuted, setIsStageMuted] = useState(false);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [reactions, setReactions] = useState<ReactionParticle[]>([]);
@@ -76,6 +85,52 @@ export default function RoomsPage() {
     loadRooms();
   }, []);
 
+  // Listen to WebSocket lounge events continuously on mount
+  useEffect(() => {
+    const unsubPeers = socketClient.on('lounge:peers', (data: { roomName: string; peers: StagePeer[] }) => {
+      console.log('[Lounge] Received stage peers:', data);
+      if (data?.peers) {
+        setStagePeers(data.peers);
+      }
+    });
+
+    const unsubPeerJoined = socketClient.on('lounge:peer_joined', (peer: StagePeer) => {
+      console.log('[Lounge] New peer joined stage:', peer);
+      if (!peer || !peer.id) return;
+      sounds.playMatchFound();
+      setStagePeers((prev) => {
+        if (prev.some((p) => p.id === peer.id)) return prev;
+        return [...prev, peer];
+      });
+    });
+
+    const unsubPeerLeft = socketClient.on('lounge:peer_left', (data: { userId: string; username: string }) => {
+      console.log('[Lounge] Peer left stage:', data);
+      if (!data?.userId) return;
+      setStagePeers((prev) => prev.filter((p) => p.id !== data.userId));
+    });
+
+    const unsubReaction = socketClient.on('lounge:reaction', (data: { emoji: string; userId: string; username: string }) => {
+      if (!data?.emoji) return;
+      const newReaction: ReactionParticle = {
+        id: Math.random().toString(),
+        emoji: data.emoji,
+        x: 20 + Math.random() * 60,
+      };
+      setReactions((curr) => [...curr.slice(-15), newReaction]);
+      setTimeout(() => {
+        setReactions((curr) => curr.filter((r) => r.id !== newReaction.id));
+      }, 2000);
+    });
+
+    return () => {
+      unsubPeers();
+      unsubPeerJoined();
+      unsubPeerLeft();
+      unsubReaction();
+    };
+  }, []);
+
   const handleJoinStage = async (room: RoomItem) => {
     sounds.playMatchFound();
     let activeToken = token;
@@ -91,25 +146,34 @@ export default function RoomsPage() {
     }
     if (!activeToken) return;
 
+    const roomName = `lounge_${room.id.slice(0, 8)}`;
+    // Set active stage immediately so UI transitions instantly
+    setActiveStage({ room, token: 'connecting', roomName });
+    setIsHandRaised(false);
+    setStagePeers([]);
+
+    socketClient.connect(activeToken);
+    socketClient.joinLounge(room.id, roomName);
+
     try {
       const stageData = await fetchRoomToken(activeToken, room.id);
-      setActiveStage({ room, token: stageData.livekitToken });
-      setIsHandRaised(false);
+      setActiveStage({ room, token: stageData.livekitToken || 'live', roomName: stageData.roomName || roomName });
     } catch (err) {
-      console.error('Failed to join stage', err);
-      // Fallback for local demo preview
-      setActiveStage({ room, token: 'demo-token' });
+      console.warn('Failed to fetch stage livekit token, using realtime fallback', err);
     }
   };
 
   const handleLeaveStage = () => {
     sounds.playEndCall();
+    socketClient.leaveLounge();
     setActiveStage(null);
+    setStagePeers([]);
     setIsHandRaised(false);
   };
 
   const handleTriggerReaction = (emoji: string) => {
     sounds.playClick();
+    socketClient.sendLoungeReaction(emoji);
     const newReaction: ReactionParticle = {
       id: Math.random().toString(),
       emoji,
@@ -121,27 +185,59 @@ export default function RoomsPage() {
     }, 2000);
   };
 
-  const handleCreateLounge = (e: React.FormEvent) => {
+  const handleCreateLounge = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
     sounds.playMatchFound();
-    const created: RoomItem = {
-      id: Math.random().toString(),
+    let activeToken = token;
+    if (!activeToken) {
+      try {
+        const authData = await getOrCreateAnonymousSession();
+        setAuth(authData.token, authData.user);
+        activeToken = authData.token;
+      } catch (err) {
+        console.error('Failed to authenticate for creating lounge', err);
+      }
+    }
+
+    const payload = {
       title: newTitle.trim(),
       topic: newTopic,
       description: newDesc.trim() || 'Welcome to our voice hangout!',
       maxParticipants: 15,
-      currentParticipants: 1,
       tags: newTag ? newTag.split(',').map((t) => t.trim()) : [newTopic.toLowerCase()],
     };
 
-    setRooms([created, ...rooms]);
+    try {
+      if (activeToken) {
+        const dbRoom = await createTopicRoom(activeToken, payload);
+        setRooms((prev) => [dbRoom, ...prev]);
+        handleJoinStage(dbRoom);
+      } else {
+        const localRoom: RoomItem = {
+          id: Math.random().toString(),
+          ...payload,
+          currentParticipants: 1,
+        };
+        setRooms((prev) => [localRoom, ...prev]);
+        handleJoinStage(localRoom);
+      }
+    } catch (err) {
+      console.warn('Fallback to local lounge creation', err);
+      const fallbackRoom: RoomItem = {
+        id: Math.random().toString(),
+        ...payload,
+        currentParticipants: 1,
+      };
+      setRooms((prev) => [fallbackRoom, ...prev]);
+      handleJoinStage(fallbackRoom);
+    }
+
     setIsCreateModalOpen(false);
     setNewTitle('');
     setNewDesc('');
     setNewTag('');
-    handleJoinStage(created);
   };
 
   const filteredRooms = rooms.filter((r) => {
@@ -235,87 +331,105 @@ export default function RoomsPage() {
               </div>
             </div>
 
-            {/* Speakers Stage (Center Avatars) */}
+            {/* Speakers Stage (Real Dynamic Avatars) */}
             <div>
-              <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">
-                Speakers On Stage (3)
-              </h4>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                  Live Speakers On Stage ({stagePeers.length + 1})
+                </h4>
+                <button
+                  onClick={() => {
+                    sounds.playClick();
+                    if (typeof navigator !== 'undefined') {
+                      navigator.clipboard?.writeText(window.location.href);
+                    }
+                    alert('Lounge link copied to clipboard!');
+                  }}
+                  className="px-3 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition-all flex items-center gap-1 active:scale-95"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Share Lounge</span>
+                </button>
+              </div>
+
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {/* Host User */}
+                {/* Active Current User on Stage */}
                 <div className="p-4 rounded-2xl bg-surfaceLight/80 border border-secondary/40 flex flex-col items-center text-center space-y-2 relative shadow-lg shadow-secondary/5">
                   <div className="relative">
-                    <div className="w-14 h-14 rounded-full bg-surface border-2 border-secondary overflow-hidden flex items-center justify-center ring-4 ring-secondary/20 animate-pulse">
+                    <div className={`w-14 h-14 rounded-full bg-surface border-2 ${isStageMuted ? 'border-gray-500' : 'border-secondary ring-4 ring-secondary/20 animate-pulse'} overflow-hidden flex items-center justify-center`}>
                       <img
-                        src={getDicebearAvatarUrl(user?.username || 'Host')}
+                        src={getDicebearAvatarUrl(user?.avatarId || user?.username || 'Host')}
                         alt="You"
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <span className="absolute -bottom-1 -right-1 p-1 rounded-full bg-secondary text-black text-[9px] font-bold shadow">
-                      🎙️
+                    <span className={`absolute -bottom-1 -right-1 p-1 rounded-full text-[9px] font-bold shadow ${isStageMuted ? 'bg-rose-500 text-white' : 'bg-secondary text-black'}`}>
+                      {isStageMuted ? '🔇' : '🎙️'}
                     </span>
                   </div>
                   <div>
                     <p className="text-xs font-bold text-white flex items-center justify-center gap-1">
-                      <span>{user?.username || 'You'}</span>
-                      <span className="text-[10px] text-secondary font-normal">(Host)</span>
+                      <span className="truncate max-w-[90px]">{user?.username || 'You'}</span>
+                      <span className="text-[10px] text-secondary font-normal">(You)</span>
                     </p>
-                    <span className="text-[10px] text-emerald-400 font-mono">Speaking...</span>
+                    <span className={`text-[10px] font-mono ${isStageMuted ? 'text-gray-400' : 'text-emerald-400'}`}>
+                      {isStageMuted ? 'Muted' : 'Mic Active'}
+                    </span>
                   </div>
                 </div>
 
-                {/* Co-Speaker 1 */}
-                <div className="p-4 rounded-2xl bg-surfaceLight/40 border border-white/10 flex flex-col items-center text-center space-y-2">
-                  <div className="w-14 h-14 rounded-full bg-surface border border-white/20 overflow-hidden flex items-center justify-center">
-                    <img
-                      src={getDicebearAvatarUrl('Alex_Chill')}
-                      alt="Alex"
-                      className="w-full h-full object-cover"
-                    />
+                {/* Real Connected Peers on Stage */}
+                {stagePeers.map((peer) => (
+                  <div
+                    key={peer.id}
+                    className="p-4 rounded-2xl bg-surfaceLight/60 border border-cyan-500/30 flex flex-col items-center text-center space-y-2 relative shadow-lg animate-fadeIn"
+                  >
+                    <div className="relative">
+                      <div className="w-14 h-14 rounded-full bg-surface border-2 border-cyan-400/80 ring-4 ring-cyan-400/20 animate-pulse overflow-hidden flex items-center justify-center">
+                        <img
+                          src={getDicebearAvatarUrl(peer.avatarId || peer.username)}
+                          alt={peer.username}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <span className="absolute -bottom-1 -right-1 p-1 rounded-full bg-cyan-400 text-black text-[9px] font-bold shadow">
+                        🎙️
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white truncate max-w-[100px]">{peer.username}</p>
+                      <span className="text-[10px] text-cyan-300 font-mono">Connected</span>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-white">Alex</p>
-                    <span className="text-[10px] text-gray-400 font-mono">Listening</span>
-                  </div>
-                </div>
+                ))}
 
-                {/* Co-Speaker 2 */}
-                <div className="p-4 rounded-2xl bg-surfaceLight/40 border border-white/10 flex flex-col items-center text-center space-y-2">
-                  <div className="w-14 h-14 rounded-full bg-surface border border-white/20 overflow-hidden flex items-center justify-center">
-                    <img
-                      src={getDicebearAvatarUrl('Maya_Night')}
-                      alt="Maya"
-                      className="w-full h-full object-cover"
-                    />
+                {/* Invite Card if only 1 user */}
+                {stagePeers.length === 0 && (
+                  <div className="col-span-1 sm:col-span-3 p-4 rounded-2xl bg-surfaceLight/30 border border-dashed border-white/20 flex flex-col justify-center items-center text-center space-y-2">
+                    <p className="text-xs font-semibold text-gray-200">
+                      You are on stage! Waiting for others to join...
+                    </p>
+                    <p className="text-[11px] text-gray-400 max-w-sm">
+                      Share this lounge link with a friend or open it in a second tab to talk in real-time.
+                    </p>
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-white">Maya</p>
-                    <span className="text-[10px] text-gray-400 font-mono">Listening</span>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
 
-            {/* Audience Section */}
-            <div>
-              <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-                Audience &amp; Listeners ({activeStage.room.currentParticipants + 4})
-              </h4>
-              <div className="flex flex-wrap items-center gap-2">
-                {['Jordan', 'Sam', 'Taylor', 'Casey', 'Riley', 'Morgan'].map((name) => (
-                  <div
-                    key={name}
-                    className="px-3 py-1.5 rounded-xl bg-surfaceLight/60 border border-white/5 flex items-center gap-2"
-                  >
-                    <div className="w-6 h-6 rounded-full overflow-hidden border border-white/10">
-                      <img
-                        src={getDicebearAvatarUrl(name)}
-                        alt={name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <span className="text-xs text-gray-300">{name}</span>
-                  </div>
+            {/* Room Info & Live Topic Tags */}
+            <div className="p-3.5 rounded-2xl bg-black/30 border border-white/5 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-cyan-400" />
+                <span className="text-xs text-gray-300 font-medium">
+                  {activeStage.room.description}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {activeStage.room.tags?.map((tag) => (
+                  <span key={tag} className="px-2 py-0.5 rounded-md bg-white/5 text-[10px] text-gray-400 font-mono">
+                    #{tag}
+                  </span>
                 ))}
               </div>
             </div>

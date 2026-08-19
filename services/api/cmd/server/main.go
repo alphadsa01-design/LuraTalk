@@ -132,6 +132,7 @@ func main() {
 
 		// Topic Lounges / Rooms
 		api.Get("/rooms", h.GetRooms)
+		api.Post("/rooms", h.CreateRoom)
 		api.Get("/rooms/{id}/token", h.GetRoomToken)
 
 		// Persistent Friendships & Memories

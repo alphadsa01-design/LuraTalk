@@ -102,6 +102,10 @@ func (h *Hub) Run() {
 							"userId": client.UserID,
 							"reason": "disconnected",
 						})
+						peer.SendJSON("lounge:peer_left", map[string]string{
+							"userId":   client.UserID,
+							"username": client.Username,
+						})
 					}
 					if len(roomClients) == 0 {
 						delete(h.Rooms, client.ActiveRoom)
@@ -604,6 +608,100 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 				"status":  "queued",
 				"mode":    ticket.Mode,
 				"message": "Finding someone worth talking to...",
+			})
+		}
+
+	case "lounge:join":
+		var payload struct {
+			RoomID   string `json:"roomId"`
+			RoomName string `json:"roomName"`
+		}
+		if err := json.Unmarshal(msg.Payload, &payload); err != nil || payload.RoomName == "" {
+			return
+		}
+
+		h.mu.Lock()
+		// Clean up previous room if any
+		if client.ActiveRoom != "" && client.ActiveRoom != payload.RoomName {
+			if prevRoomClients, exists := h.Rooms[client.ActiveRoom]; exists {
+				delete(prevRoomClients, client.UserID)
+				for _, peer := range prevRoomClients {
+					peer.SendJSON("lounge:peer_left", map[string]string{
+						"userId":   client.UserID,
+						"username": client.Username,
+					})
+				}
+				if len(prevRoomClients) == 0 {
+					delete(h.Rooms, client.ActiveRoom)
+				}
+			}
+		}
+
+		client.ActiveRoom = payload.RoomName
+		if h.Rooms[payload.RoomName] == nil {
+			h.Rooms[payload.RoomName] = make(map[string]*Client)
+		}
+		h.Rooms[payload.RoomName][client.UserID] = client
+
+		// Collect existing peers in this lounge
+		var peers []map[string]interface{}
+		for _, peer := range h.Rooms[payload.RoomName] {
+			if peer.UserID != client.UserID {
+				peers = append(peers, map[string]interface{}{
+					"id":       peer.UserID,
+					"username": peer.Username,
+					"avatarId": peer.AvatarID,
+				})
+			}
+		}
+
+		// Notify other peers in this lounge that client joined
+		for _, peer := range h.Rooms[payload.RoomName] {
+			if peer.UserID != client.UserID {
+				peer.SendJSON("lounge:peer_joined", map[string]interface{}{
+					"id":       client.UserID,
+					"username": client.Username,
+					"avatarId": client.AvatarID,
+				})
+			}
+		}
+		h.mu.Unlock()
+
+		// Send existing peers list to the newly joined client
+		client.SendJSON("lounge:peers", map[string]interface{}{
+			"roomName": payload.RoomName,
+			"peers":    peers,
+		})
+
+	case "lounge:leave":
+		h.mu.Lock()
+		if client.ActiveRoom != "" {
+			activeRoom := client.ActiveRoom
+			if roomClients, exists := h.Rooms[activeRoom]; exists {
+				delete(roomClients, client.UserID)
+				for _, peer := range roomClients {
+					peer.SendJSON("lounge:peer_left", map[string]string{
+						"userId":   client.UserID,
+						"username": client.Username,
+					})
+				}
+				if len(roomClients) == 0 {
+					delete(h.Rooms, activeRoom)
+				}
+			}
+			client.ActiveRoom = ""
+		}
+		h.mu.Unlock()
+
+	case "lounge:reaction":
+		var payload struct {
+			Emoji string `json:"emoji"`
+		}
+		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.Emoji != "" {
+			h.broadcastToRoomExcept(client.ActiveRoom, client.UserID, "lounge:reaction", map[string]interface{}{
+				"emoji":    payload.Emoji,
+				"userId":   client.UserID,
+				"username": client.Username,
 			})
 		}
 

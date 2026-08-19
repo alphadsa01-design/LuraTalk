@@ -77,14 +77,16 @@ export default function Navbar() {
     <>
       {/* Top Navbar */}
       <header className="sticky top-0 z-40 w-full border-b border-white/5 bg-background/80 backdrop-blur-2xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between relative">
           {/* Brand Logo */}
-          <Link href="/" className="hover:opacity-95 transition-opacity">
-            <LuraLogo size="md" />
-          </Link>
+          <div className="flex items-center">
+            <Link href="/" className="hover:opacity-95 transition-opacity">
+              <LuraLogo size="md" />
+            </Link>
+          </div>
 
-          {/* Desktop Navigation Tabs */}
-          <nav className="hidden sm:flex items-center gap-1.5 p-1 rounded-2xl bg-surfaceLight/60 border border-white/5 backdrop-blur-md">
+          {/* Desktop Navigation Tabs - Perfectly Centered */}
+          <nav className="hidden sm:flex items-center gap-1.5 p-1 rounded-2xl bg-surfaceLight/60 border border-white/5 backdrop-blur-md absolute left-1/2 -translate-x-1/2">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href;
@@ -106,7 +108,7 @@ export default function Navbar() {
           </nav>
 
           {/* User Profile Station & Avatar Picker */}
-          <div className="relative" ref={dropdownRef}>
+          <div className="relative flex items-center justify-end" ref={dropdownRef}>
             <button
               onClick={() => setIsProfileOpen(!isProfileOpen)}
               className="flex items-center gap-2.5 p-1 sm:px-3 sm:py-1.5 rounded-2xl bg-surfaceLight/80 hover:bg-surfaceLight border border-white/10 hover:border-white/20 transition-all shadow-sm group"

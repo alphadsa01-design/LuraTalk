@@ -181,6 +181,18 @@ class AuraSocketClient {
     this.send('safety:report', { reportedUserId, reason, description });
   }
 
+  public joinLounge(roomId: string, roomName: string) {
+    this.send('lounge:join', { roomId, roomName });
+  }
+
+  public leaveLounge() {
+    this.send('lounge:leave', {});
+  }
+
+  public sendLoungeReaction(emoji: string) {
+    this.send('lounge:reaction', { emoji });
+  }
+
   public disconnect() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.ws) {
