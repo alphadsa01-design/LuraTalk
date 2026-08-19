@@ -247,14 +247,15 @@ class LuraWebRTCEngine {
     const pt = opusMatch[1];
 
     const fmtpRegex = new RegExp(`a=fmtp:${pt} (.*)`, 'g');
-    const enhancedFmtp = `a=fmtp:${pt} minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=64000;cbr=0`;
+    // Standard 20ms packetization prevents NetEQ jitter buffer time-stretching & robotic distortion
+    const naturalVoiceFmtp = `a=fmtp:${pt} minptime=20;ptime=20;maxptime=40;useinbandfec=1;usedtx=1;stereo=0;sprop-stereo=0;maxaveragebitrate=32000`;
 
     if (fmtpRegex.test(sdp)) {
-      return sdp.replace(fmtpRegex, enhancedFmtp);
+      return sdp.replace(fmtpRegex, naturalVoiceFmtp);
     } else {
       return sdp.replace(
         new RegExp(`a=rtpmap:${pt} opus/48000/2`, 'i'),
-        `a=rtpmap:${pt} opus/48000/2\r\n${enhancedFmtp}`
+        `a=rtpmap:${pt} opus/48000/2\r\n${naturalVoiceFmtp}`
       );
     }
   }
@@ -358,7 +359,9 @@ class LuraWebRTCEngine {
           this.remoteAudioSource.disconnect();
         } catch {}
       }
-      this.remoteAudioSource = ctx.createMediaStreamSource(stream);
+      // Clone stream so visual analysis does not resample or jitter the HTMLAudioElement playback
+      const clonedStream = stream.clone();
+      this.remoteAudioSource = ctx.createMediaStreamSource(clonedStream);
       this.remoteAnalyser = ctx.createAnalyser();
       this.remoteAnalyser.fftSize = 256;
       this.remoteAnalyser.smoothingTimeConstant = 0.4;
