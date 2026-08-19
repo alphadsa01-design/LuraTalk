@@ -26,18 +26,48 @@ export interface UserPreferencesPayload {
 }
 
 export async function getOrCreateAnonymousSession(deviceFingerprint?: string, retries = 3): Promise<{ token: string; user: any }> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auravoice_token') : null;
-  if (token) {
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/users/me`, {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('auravoice_token');
+    // Try to load cached user from Zustand storage for 0ms instant startup
+    const rawStorage = localStorage.getItem('luratalk_user_storage');
+    let cachedUser: any = null;
+    if (rawStorage) {
+      try {
+        const parsed = JSON.parse(rawStorage);
+        if (parsed?.state?.user) {
+          cachedUser = parsed.state.user;
+        }
+      } catch {}
+    }
+
+    if (token && cachedUser) {
+      // Revalidate in background without blocking matchmaking startup
+      fetch(`${API_BASE}/api/v1/users/me`, {
         headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const user = await res.json();
-        return { token, user };
+      }).then(async (res) => {
+        if (!res.ok && res.status === 401) {
+          localStorage.removeItem('auravoice_token');
+        }
+      }).catch(() => {});
+      return { token, user: cachedUser };
+    }
+
+    if (token) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1200);
+        const res = await fetch(`${API_BASE}/api/v1/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const user = await res.json();
+          return { token, user };
+        }
+      } catch {
+        // Fall through to create session
       }
-    } catch {
-      // Fall through to create session
     }
   }
 

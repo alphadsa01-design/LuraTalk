@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type UserMood = 'chill' | 'funny' | 'energetic' | 'curious' | 'deep' | 'talkative' | 'quiet' | 'need_to_talk';
 export type ConversationIntention = 'casual' | 'friends' | 'deep' | 'language' | 'gaming' | 'music' | 'movies' | 'travel' | 'advice' | 'debate' | 'learning' | 'dating' | 'fun';
@@ -55,61 +56,86 @@ export interface UserState {
   removeInterest: (interest: string) => void;
 }
 
-export const useUserStore = create<UserState>((set, get) => ({
-  token: null,
-  user: null,
-  avatarSeed: 'Felix',
-  avatarId: 'felix',
-  nativeLanguage: 'en',
-  targetLanguages: ['en', 'es'],
-  interests: ['gaming', 'technology', 'music', 'movies'],
-  mood: 'chill',
-  intention: 'casual',
-  countryPreference: 'worldwide',
-  oneQuestionAnswer: '',
-  enableAiAssistant: true,
-  enableLiveTranslation: false,
-  targetTranslationLanguage: 'es',
+export const useUserStore = create<UserState>()(
+  persist(
+    (set, get) => ({
+      token: null,
+      user: null,
+      avatarSeed: 'Felix',
+      avatarId: 'felix',
+      nativeLanguage: 'en',
+      targetLanguages: ['en', 'es'],
+      interests: ['gaming', 'technology', 'music', 'movies'],
+      mood: 'chill',
+      intention: 'casual',
+      countryPreference: 'worldwide',
+      oneQuestionAnswer: '',
+      enableAiAssistant: true,
+      enableLiveTranslation: false,
+      targetTranslationLanguage: 'es',
 
-  setAuth: (token, user) => {
-    const seed = user?.avatarSeed || user?.username || 'Felix';
-    set({ token, user, avatarSeed: seed, avatarId: user?.avatarId || 'felix' });
-  },
-  setAvatar: (avatarId, seed) => {
-    const found = AVATAR_PRESETS.find((a) => a.id === avatarId);
-    const chosenSeed = seed || found?.seed || avatarId;
-    set((state) => ({
-      avatarId,
-      avatarSeed: chosenSeed,
-      user: state.user ? { ...state.user, avatarId, avatarSeed: chosenSeed } : state.user,
-    }));
-  },
-  setAvatarSeed: (avatarSeed) =>
-    set((state) => ({
-      avatarSeed,
-      user: state.user ? { ...state.user, avatarSeed } : state.user,
-    })),
-  rollRandomAvatar: () => {
-    const randomSeeds = ['Felix', 'Aria', 'Leo', 'Zoe', 'Maya', 'Kai', 'Nico', 'Alex', 'Sam', 'Elena', 'Jordan', 'Luna', 'Milo', 'Chloe', 'Liam', 'Emma'];
-    const current = get().avatarSeed;
-    const pool = randomSeeds.filter((s) => s !== current);
-    const chosenSeed = pool[Math.floor(Math.random() * pool.length)] || `User_${Math.floor(Math.random() * 1000)}`;
-    const preset = AVATAR_PRESETS.find((p) => p.seed.toLowerCase() === chosenSeed.toLowerCase());
-    
-    set((state) => ({
-      avatarSeed: chosenSeed,
-      avatarId: preset ? preset.id : 'custom',
-      user: state.user ? { ...state.user, avatarSeed: chosenSeed, avatarId: preset ? preset.id : 'custom' } : state.user,
-    }));
-    return chosenSeed;
-  },
-  updatePreferences: (prefs) => set((state) => ({ ...state, ...prefs })),
-  addInterest: (interest) =>
-    set((state) => ({
-      interests: state.interests.includes(interest) ? state.interests : [...state.interests, interest],
-    })),
-  removeInterest: (interest) =>
-    set((state) => ({
-      interests: state.interests.filter((i) => i !== interest),
-    })),
-}));
+      setAuth: (token, user) => {
+        const seed = user?.avatarSeed || user?.username || 'Felix';
+        set({ token, user, avatarSeed: seed, avatarId: user?.avatarId || 'felix' });
+      },
+      setAvatar: (avatarId, seed) => {
+        const found = AVATAR_PRESETS.find((a) => a.id === avatarId);
+        const chosenSeed = seed || found?.seed || avatarId;
+        set((state) => ({
+          avatarId,
+          avatarSeed: chosenSeed,
+          user: state.user ? { ...state.user, avatarId, avatarSeed: chosenSeed } : state.user,
+        }));
+      },
+      setAvatarSeed: (avatarSeed) =>
+        set((state) => ({
+          avatarSeed,
+          user: state.user ? { ...state.user, avatarSeed } : state.user,
+        })),
+      rollRandomAvatar: () => {
+        const randomSeeds = ['Felix', 'Aria', 'Leo', 'Zoe', 'Maya', 'Kai', 'Nico', 'Alex', 'Sam', 'Elena', 'Jordan', 'Luna', 'Milo', 'Chloe', 'Liam', 'Emma'];
+        const current = get().avatarSeed;
+        const pool = randomSeeds.filter((s) => s !== current);
+        const chosenSeed = pool[Math.floor(Math.random() * pool.length)] || `User_${Math.floor(Math.random() * 1000)}`;
+        const preset = AVATAR_PRESETS.find((p) => p.seed.toLowerCase() === chosenSeed.toLowerCase());
+        
+        set((state) => ({
+          avatarSeed: chosenSeed,
+          avatarId: preset ? preset.id : 'custom',
+          user: state.user ? { ...state.user, avatarSeed: chosenSeed, avatarId: preset ? preset.id : 'custom' } : state.user,
+        }));
+        return chosenSeed;
+      },
+      updatePreferences: (prefs) => set((state) => ({ ...state, ...prefs })),
+      addInterest: (interest) =>
+        set((state) => ({
+          interests: state.interests.includes(interest) ? state.interests : [...state.interests, interest],
+        })),
+      removeInterest: (interest) =>
+        set((state) => ({
+          interests: state.interests.filter((i) => i !== interest),
+        })),
+    }),
+    {
+      name: 'luratalk_user_storage',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        token: state.token,
+        user: state.user,
+        avatarSeed: state.avatarSeed,
+        avatarId: state.avatarId,
+        nativeLanguage: state.nativeLanguage,
+        targetLanguages: state.targetLanguages,
+        interests: state.interests,
+        mood: state.mood,
+        intention: state.intention,
+        countryPreference: state.countryPreference,
+        preferredCountry: state.preferredCountry,
+        oneQuestionAnswer: state.oneQuestionAnswer,
+        enableAiAssistant: state.enableAiAssistant,
+        enableLiveTranslation: state.enableLiveTranslation,
+        targetTranslationLanguage: state.targetTranslationLanguage,
+      }),
+    }
+  )
+);

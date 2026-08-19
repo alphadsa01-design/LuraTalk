@@ -49,7 +49,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export default function AdminPage() {
   const [mounted, setMounted] = useState(false);
-  const [adminKey, setAdminKey] = useState('aura_admin_master_secret_key_2026');
+  const [adminKey, setAdminKey] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState<'telemetry' | 'moderation' | 'rooms' | 'analytics' | 'logs'>('telemetry');
   const [stats, setStats] = useState<any>(null);
@@ -61,7 +61,6 @@ export default function AdminPage() {
 
   useEffect(() => {
     setMounted(true);
-    loadData(adminKey);
   }, []);
 
   const formatSafeDate = (ts?: string | number) => {

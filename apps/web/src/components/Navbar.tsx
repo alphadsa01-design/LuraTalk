@@ -86,7 +86,7 @@ export default function Navbar() {
           </div>
 
           {/* Desktop Navigation Tabs - Perfectly Centered */}
-          <nav className="hidden sm:flex items-center gap-1.5 p-1 rounded-2xl bg-surfaceLight/60 border border-white/5 backdrop-blur-md absolute left-1/2 -translate-x-1/2">
+          <nav className="hidden md:flex items-center gap-1.5 p-1 rounded-2xl bg-surfaceLight/60 border border-white/5 backdrop-blur-md absolute left-1/2 -translate-x-1/2">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href;
@@ -111,7 +111,7 @@ export default function Navbar() {
           <div className="relative flex items-center justify-end" ref={dropdownRef}>
             <button
               onClick={() => setIsProfileOpen(!isProfileOpen)}
-              className="flex items-center gap-2.5 p-1 sm:px-3 sm:py-1.5 rounded-2xl bg-surfaceLight/80 hover:bg-surfaceLight border border-white/10 hover:border-white/20 transition-all shadow-sm group"
+              className="flex items-center gap-2 p-1 sm:px-3 sm:py-1.5 rounded-2xl bg-surfaceLight/80 hover:bg-surfaceLight border border-white/10 hover:border-white/20 transition-all shadow-sm group active:scale-95"
             >
               {/* Avatar Pill with DiceBear SVG */}
               <div
@@ -126,7 +126,7 @@ export default function Navbar() {
 
               {/* Username */}
               <div className="text-left hidden xs:block">
-                <p className="text-xs font-bold text-white leading-tight max-w-[90px] sm:max-w-[120px] truncate">
+                <p className="text-xs font-bold text-white leading-tight max-w-[80px] sm:max-w-[120px] truncate">
                   {user?.username || 'Anonymous'}
                 </p>
                 <p className="text-[10px] text-gray-400 font-medium leading-none mt-0.5">
@@ -149,7 +149,7 @@ export default function Navbar() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 8, scale: 0.96 }}
                   transition={{ duration: 0.12 }}
-                  className="absolute right-0 top-12 mt-2 w-72 rounded-2xl glass-panel p-4 border border-white/10 shadow-2xl z-50 space-y-3.5"
+                  className="absolute right-0 top-12 mt-2 w-72 max-w-[calc(100vw-1.5rem)] rounded-2xl glass-panel p-4 border border-white/10 shadow-2xl z-50 space-y-3.5 bg-surface/95 backdrop-blur-2xl"
                 >
                   {/* User Identity Header */}
                   <div className="flex items-center gap-3">
@@ -227,7 +227,7 @@ export default function Navbar() {
 
       {/* Mobile Bottom Navigation Bar (Hidden during active calls on /match) */}
       {!pathname?.startsWith('/match') && (
-        <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-2xl border-t border-white/10 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around shadow-2xl">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-2xl border-t border-white/10 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around shadow-2xl">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;

@@ -52,17 +52,17 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-16 pb-28 sm:pb-20 space-y-16 sm:space-y-24">
+    <div className="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 py-6 sm:py-16 pb-28 sm:pb-20 space-y-12 sm:space-y-24">
       {/* HERO SECTION */}
       <div className="text-center max-w-4xl mx-auto pt-2 sm:pt-6 relative">
         {/* Clean Header Badge */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-surfaceLight/80 border border-white/10 text-xs font-semibold text-gray-300 mb-6 shadow-lg backdrop-blur-xl"
+          className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-1.5 rounded-full bg-surfaceLight/80 border border-white/10 text-xs font-semibold text-gray-300 mb-4 sm:mb-6 shadow-lg backdrop-blur-xl"
         >
           <span className="w-2 h-2 rounded-full bg-indigo-400" />
-          <span className="text-gray-200 font-medium">Anonymous Voice Conversations</span>
+          <span className="text-gray-200 font-medium text-[11px] sm:text-xs">Anonymous Voice Conversations</span>
         </motion.div>
 
         {/* Main Headline */}
@@ -70,7 +70,7 @@ export default function LandingPage() {
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-4xl sm:text-7xl font-black tracking-tight text-white leading-[1.1] font-sans"
+          className="text-3xl xs:text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-white leading-[1.15] font-sans px-2"
         >
           Meet someone <br />
           <span className="gradient-text">worth talking to.</span>
@@ -81,7 +81,7 @@ export default function LandingPage() {
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="mt-6 text-base sm:text-xl text-gray-400 font-normal leading-relaxed max-w-2xl mx-auto"
+          className="mt-4 sm:mt-6 text-sm sm:text-lg lg:text-xl text-gray-400 font-normal leading-relaxed max-w-2xl mx-auto px-3"
         >
           Spontaneous voice conversations matched by shared interests and mood with no awkward silences.
         </motion.p>
@@ -91,9 +91,9 @@ export default function LandingPage() {
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.25 }}
-          className="my-8 flex items-center justify-center gap-1.5 h-12 py-2 px-6 rounded-2xl glass-panel border border-white/10 w-fit mx-auto shadow-inner"
+          className="my-6 sm:my-8 flex items-center justify-center gap-1 sm:gap-1.5 h-11 sm:h-12 py-2 px-4 sm:px-6 rounded-2xl glass-panel border border-white/10 w-fit max-w-full mx-auto shadow-inner overflow-hidden"
         >
-          <Headphones className="w-4 h-4 text-cyan-400 mr-2" />
+          <Headphones className="w-4 h-4 text-cyan-400 mr-1.5 sm:mr-2 shrink-0" />
           {[40, 75, 100, 55, 85, 30, 95, 60, 80, 45, 90, 65, 35, 85, 50, 70, 90, 40].map((h, idx) => (
             <motion.div
               key={idx}
@@ -109,16 +109,16 @@ export default function LandingPage() {
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto"
+          className="mt-8 sm:mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4 max-w-3xl mx-auto"
         >
           {/* Card 1: Voice Chat */}
           <button
             onClick={() => handleStartMatch('voice')}
             disabled={!!loadingMode}
-            className="p-5 sm:p-6 rounded-2xl bg-surfaceLight/80 hover:bg-surfaceLight border border-white/10 hover:border-primary/50 text-left transition-all duration-200 flex flex-col justify-between group shadow-sm"
+            className="p-4 sm:p-6 rounded-2xl bg-surfaceLight/80 hover:bg-surfaceLight border border-white/10 hover:border-primary/50 text-left transition-all duration-200 flex flex-col justify-between group shadow-sm active:scale-[0.98]"
           >
             <div>
-              <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary-hover flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
+              <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary-hover flex items-center justify-center mb-3 sm:mb-4 group-hover:scale-105 transition-transform">
                 <Radio className="w-5 h-5" />
               </div>
               <h3 className="text-base font-bold text-white group-hover:text-primary-hover transition-colors">
@@ -128,7 +128,7 @@ export default function LandingPage() {
                 Instant real-time voice call with strangers.
               </p>
             </div>
-            <div className="mt-5 flex items-center gap-1.5 text-xs font-semibold text-gray-300 group-hover:text-white transition-colors">
+            <div className="mt-4 sm:mt-5 flex items-center gap-1.5 text-xs font-semibold text-gray-300 group-hover:text-white transition-colors">
               <span>{loadingMode === 'voice' ? 'Connecting...' : 'Start Voice'}</span>
               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
             </div>
@@ -138,10 +138,10 @@ export default function LandingPage() {
           <button
             onClick={() => handleStartMatch('mystery')}
             disabled={!!loadingMode}
-            className="p-5 sm:p-6 rounded-2xl bg-surfaceLight/80 hover:bg-surfaceLight border border-white/10 hover:border-pink-500/50 text-left transition-all duration-200 flex flex-col justify-between group shadow-sm"
+            className="p-4 sm:p-6 rounded-2xl bg-surfaceLight/80 hover:bg-surfaceLight border border-white/10 hover:border-pink-500/50 text-left transition-all duration-200 flex flex-col justify-between group shadow-sm active:scale-[0.98]"
           >
             <div>
-              <div className="w-10 h-10 rounded-xl bg-pink-500/20 text-pink-400 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
+              <div className="w-10 h-10 rounded-xl bg-pink-500/20 text-pink-400 flex items-center justify-center mb-3 sm:mb-4 group-hover:scale-105 transition-transform">
                 <Sparkles className="w-5 h-5" />
               </div>
               <h3 className="text-base font-bold text-white group-hover:text-pink-400 transition-colors">
@@ -151,7 +151,7 @@ export default function LandingPage() {
                 Progressive profile reveal as you talk.
               </p>
             </div>
-            <div className="mt-5 flex items-center gap-1.5 text-xs font-semibold text-gray-300 group-hover:text-white transition-colors">
+            <div className="mt-4 sm:mt-5 flex items-center gap-1.5 text-xs font-semibold text-gray-300 group-hover:text-white transition-colors">
               <span>{loadingMode === 'mystery' ? 'Unlocking...' : 'Try Mystery'}</span>
               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
             </div>
@@ -161,10 +161,10 @@ export default function LandingPage() {
           <button
             onClick={() => handleStartMatch('text')}
             disabled={!!loadingMode}
-            className="p-5 sm:p-6 rounded-2xl bg-surfaceLight/80 hover:bg-surfaceLight border border-white/10 hover:border-cyan-400/50 text-left transition-all duration-200 flex flex-col justify-between group shadow-sm"
+            className="p-4 sm:p-6 rounded-2xl bg-surfaceLight/80 hover:bg-surfaceLight border border-white/10 hover:border-cyan-400/50 text-left transition-all duration-200 flex flex-col justify-between group shadow-sm active:scale-[0.98]"
           >
             <div>
-              <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center mb-3 sm:mb-4 group-hover:scale-105 transition-transform">
                 <MessageSquare className="w-5 h-5" />
               </div>
               <h3 className="text-base font-bold text-white group-hover:text-cyan-400 transition-colors">
@@ -174,7 +174,7 @@ export default function LandingPage() {
                 Quiet messaging with live translation.
               </p>
             </div>
-            <div className="mt-5 flex items-center gap-1.5 text-xs font-semibold text-gray-300 group-hover:text-white transition-colors">
+            <div className="mt-4 sm:mt-5 flex items-center gap-1.5 text-xs font-semibold text-gray-300 group-hover:text-white transition-colors">
               <span>{loadingMode === 'text' ? 'Entering...' : 'Start Text'}</span>
               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
             </div>

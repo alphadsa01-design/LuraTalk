@@ -715,64 +715,64 @@ function MatchPageContent() {
 
       {/* Bottom In-Call Dock (Ultra-Ergonomic for Mobile & Desktop) */}
       {status === 'matched' && (
-        <div className="fixed bottom-3 sm:bottom-6 left-2.5 right-2.5 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto z-40 max-w-lg sm:w-auto glass-panel-glow p-2 sm:p-2.5 rounded-3xl border border-white/20 shadow-2xl backdrop-blur-3xl flex flex-col sm:flex-row gap-2 sm:gap-3 pb-[max(0.6rem,env(safe-area-inset-bottom))]">
+        <div className="fixed bottom-2.5 sm:bottom-6 left-2 right-2 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto z-40 max-w-lg sm:w-auto glass-panel-glow p-2 sm:p-2.5 rounded-2xl sm:rounded-3xl border border-white/20 shadow-2xl backdrop-blur-3xl flex flex-col sm:flex-row gap-1.5 sm:gap-3 pb-[max(0.4rem,env(safe-area-inset-bottom))]">
           {/* Mobile Top Quick Utility Strip (Hidden on Desktop) */}
-          <div className="flex sm:hidden items-center justify-between gap-1 px-1">
+          <div className="flex sm:hidden items-center justify-between gap-1">
             <button
               onClick={() => setIsChatOpen(!isChatOpen)}
-              className={`flex-1 py-1.5 px-2 rounded-xl flex items-center justify-center gap-1 text-[11px] font-bold transition-all ${
+              className={`flex-1 py-1 px-1.5 rounded-lg flex items-center justify-center gap-1 text-[10px] font-bold transition-all active:scale-95 ${
                 isChatOpen
                   ? 'bg-primary text-white shadow-md shadow-primary/30'
                   : 'bg-surfaceLight/80 text-gray-300 border border-white/10'
               }`}
             >
-              <MessageSquare className="w-3.5 h-3.5" />
+              <MessageSquare className="w-3 h-3" />
               <span>Chat</span>
             </button>
 
             <button
               onClick={() => setIsGameMenuOpen(!isGameMenuOpen)}
-              className={`flex-1 py-1.5 px-2 rounded-xl flex items-center justify-center gap-1 text-[11px] font-bold transition-all ${
+              className={`flex-1 py-1 px-1.5 rounded-lg flex items-center justify-center gap-1 text-[10px] font-bold transition-all active:scale-95 ${
                 isGameMenuOpen
                   ? 'bg-accent-pink text-white shadow-md shadow-pink-500/30'
                   : 'bg-surfaceLight/80 text-accent-pink border border-white/10'
               }`}
             >
-              <Gamepad2 className="w-3.5 h-3.5 text-accent-pink" />
+              <Gamepad2 className="w-3 h-3 text-accent-pink" />
               <span>Games</span>
             </button>
 
             <button
               onClick={handleSendFriendRequest}
               disabled={friendRequested}
-              className={`flex-1 py-1.5 px-2 rounded-xl flex items-center justify-center gap-1 text-[11px] font-bold transition-all ${
+              className={`flex-1 py-1 px-1.5 rounded-lg flex items-center justify-center gap-1 text-[10px] font-bold transition-all active:scale-95 ${
                 friendRequested
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                   : 'bg-surfaceLight/80 text-emerald-400 border border-white/10'
               }`}
             >
-              <UserPlus className="w-3.5 h-3.5" />
+              <UserPlus className="w-3 h-3" />
               <span>{friendRequested ? 'Added' : 'Friend'}</span>
             </button>
 
             <button
               onClick={toggleDeafen}
-              className={`py-1.5 px-2.5 rounded-xl flex items-center justify-center text-[11px] font-bold transition-all ${
+              className={`py-1 px-2 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all active:scale-95 ${
                 isDeafened
                   ? 'bg-amber-500 text-white shadow-md shadow-amber-500/30'
                   : 'bg-surfaceLight/80 text-gray-300 border border-white/10'
               }`}
               title={isDeafened ? 'Enable Audio' : 'Deafen'}
             >
-              {isDeafened ? <VolumeX className="w-3.5 h-3.5 text-white" /> : <Volume2 className="w-3.5 h-3.5" />}
+              {isDeafened ? <VolumeX className="w-3 h-3 text-white" /> : <Volume2 className="w-3 h-3" />}
             </button>
 
             <button
               onClick={() => setIsSafetyOpen(true)}
-              className="py-1.5 px-2.5 rounded-xl flex items-center justify-center bg-surfaceLight/80 text-rose-300 border border-white/10 text-[11px] font-bold"
+              className="py-1 px-2 rounded-lg flex items-center justify-center bg-surfaceLight/80 text-rose-300 border border-white/10 text-[10px] font-bold active:scale-95"
               title="Report & Safety"
             >
-              <ShieldAlert className="w-3.5 h-3.5" />
+              <ShieldAlert className="w-3 h-3" />
             </button>
           </div>
 

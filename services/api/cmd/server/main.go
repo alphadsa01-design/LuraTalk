@@ -80,8 +80,7 @@ func main() {
 
 	// CORS Allowlist Defense (Executed before security headers)
 	corsOpts := cors.Options{
-		AllowedOrigins:   []string{"https://*", "http://*"},
-		AllowOriginFunc:  func(r *http.Request, origin string) bool { return true },
+		AllowedOrigins:   []string{"https://luratalk.vercel.app", "http://localhost:3000", "http://127.0.0.1:3000"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Admin-Key", "Origin"},
 		ExposedHeaders:   []string{"Link"},

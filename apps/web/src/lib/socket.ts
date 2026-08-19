@@ -9,6 +9,7 @@ class AuraSocketClient {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private isConnecting: boolean = false;
   private messageBuffer: string[] = [];
+  private reconnectAttempts: number = 0;
 
   public connect(token: string) {
     if (typeof window === 'undefined' || typeof WebSocket === 'undefined') {
@@ -39,6 +40,7 @@ class AuraSocketClient {
 
       this.ws.onopen = () => {
         this.isConnecting = false;
+        this.reconnectAttempts = 0;
         this.emitInternal('open', {});
 
         // Flush any messages buffered while the connection was being established
@@ -87,11 +89,13 @@ class AuraSocketClient {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 15000) + Math.random() * 500;
+    this.reconnectAttempts++;
     this.reconnectTimer = setTimeout(() => {
       if (this.token) {
         this.connect(this.token);
       }
-    }, 2000);
+    }, delay);
   }
 
   public on(event: string, handler: EventHandler) {

@@ -233,32 +233,34 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 		log.Printf("Error generating LiveKit tokens: %v %v", errA, errB)
 	}
 
-	// Record Conversation in DB
+	// Record Conversation in DB in background so match dispatch is instant (<1ms)
 	convID := uuid.New()
 	now := time.Now().UTC()
-	database.DB.Create(&models.Conversation{
-		ID:              convID,
-		RoomName:        pair.RoomName,
-		Type:            "random_voice",
-		DurationSeconds: 0,
-		CreatedAt:       now,
-	})
-	uidA, errUA := uuid.Parse(clientA.UserID)
-	uidB, errUB := uuid.Parse(clientB.UserID)
-	if errUA == nil && errUB == nil {
-		database.DB.Create(&models.ConversationParticipant{
-			ID:             uuid.New(),
-			ConversationID: convID,
-			UserID:         uidA,
-			JoinedAt:       now,
+	go func(cID uuid.UUID, rName, uA, uB string, n time.Time) {
+		database.DB.Create(&models.Conversation{
+			ID:              cID,
+			RoomName:        rName,
+			Type:            "random_voice",
+			DurationSeconds: 0,
+			CreatedAt:       n,
 		})
-		database.DB.Create(&models.ConversationParticipant{
-			ID:             uuid.New(),
-			ConversationID: convID,
-			UserID:         uidB,
-			JoinedAt:       now,
-		})
-	}
+		uidA, errUA := uuid.Parse(uA)
+		uidB, errUB := uuid.Parse(uB)
+		if errUA == nil && errUB == nil {
+			database.DB.Create(&models.ConversationParticipant{
+				ID:             uuid.New(),
+				ConversationID: cID,
+				UserID:         uidA,
+				JoinedAt:       n,
+			})
+			database.DB.Create(&models.ConversationParticipant{
+				ID:             uuid.New(),
+				ConversationID: cID,
+				UserID:         uidB,
+				JoinedAt:       n,
+			})
+		}
+	}(convID, pair.RoomName, clientA.UserID, clientB.UserID, now)
 
 	// Generate AI icebreaker suggestion
 	icebreaker := h.AIEngine.GenerateIcebreaker(pair.SharedInterests, pair.TicketA.Preferences.Intention, pair.TicketA.Preferences.Mood)
@@ -665,7 +667,16 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 				})
 			}
 		}
+
+		totalCount := len(h.Rooms[payload.RoomName])
 		h.mu.Unlock()
+
+		// Persist live room participant count to database
+		if payload.RoomID != "" {
+			if rUUID, err := uuid.Parse(payload.RoomID); err == nil {
+				go database.DB.Model(&models.Room{}).Where("id = ?", rUUID).Update("current_participants", totalCount)
+			}
+		}
 
 		// Send existing peers list to the newly joined client
 		client.SendJSON("lounge:peers", map[string]interface{}{
@@ -679,6 +690,7 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			activeRoom := client.ActiveRoom
 			if roomClients, exists := h.Rooms[activeRoom]; exists {
 				delete(roomClients, client.UserID)
+				remainingCount := len(roomClients)
 				for _, peer := range roomClients {
 					peer.SendJSON("lounge:peer_left", map[string]string{
 						"userId":   client.UserID,
@@ -687,6 +699,11 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 				}
 				if len(roomClients) == 0 {
 					delete(h.Rooms, activeRoom)
+				}
+				// Persist decrement to room if it's a lounge
+				if strings.HasPrefix(activeRoom, "lounge_") {
+					shortID := strings.TrimPrefix(activeRoom, "lounge_")
+					go database.DB.Model(&models.Room{}).Where("CAST(id AS TEXT) LIKE ?", shortID+"%").Update("current_participants", remainingCount)
 				}
 			}
 			client.ActiveRoom = ""

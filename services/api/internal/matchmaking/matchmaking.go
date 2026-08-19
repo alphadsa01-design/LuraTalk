@@ -224,32 +224,21 @@ func (e *MatchmakingEngine) runMatchTick() {
 			bestScore := -1000.0
 			bestIdx := -1
 
-			for j := i + 1; j < len(candidates); j++ {
+			for j := 0; j < len(candidates); j++ {
+				if i == j {
+					continue
+				}
 				tB := candidates[j]
 				if matchedIDs[tB.TicketID] {
 					continue
 				}
 
 				score, shared := e.calculateMatchScore(tA, tB)
-				if score > bestScore && score > 0 { // Minimum compatibility threshold
+				// Any compatible non-blocked user can match immediately; pick the best available partner
+				if score > -500 && score > bestScore {
 					bestScore = score
 					bestIdx = j
 					_ = shared
-				}
-			}
-
-			// If best match found or if waiting > 4 seconds, lower threshold
-			timeWaitingA := time.Now().UnixMilli() - tA.QueuedAt
-			if bestIdx == -1 && len(candidates) > 1 && timeWaitingA > 4000 {
-				for j := 0; j < len(candidates); j++ {
-					if j != i && !matchedIDs[candidates[j].TicketID] {
-						score, _ := e.calculateMatchScore(tA, candidates[j])
-						if score > -500 { // fallback if not explicitly blocked
-							bestIdx = j
-							bestScore = score
-							break
-						}
-					}
 				}
 			}
 
