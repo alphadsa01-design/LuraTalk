@@ -167,16 +167,17 @@ class LuraWebRTCEngine {
 
         this.remoteStream = stream;
 
-        // Route 1: Direct HTMLAudioElement
+        // Route 1: Direct High-Fidelity HTMLAudioElement (Primary audio pipeline)
         if (this.remoteAudio) {
           this.remoteAudio.srcObject = stream;
+          this.remoteAudio.volume = 1.0;
           this.remoteAudio.muted = this.isDeafened;
           this.remoteAudio.play().catch((err) => {
             console.warn('Autoplay prevented remote audio, awaiting user gesture', err);
           });
         }
 
-        // Route 2: Web Audio API Analysis & Hardware Destination
+        // Route 2: Visual Frequency & Speech Detection Analyser ONLY (Never piped to destination to prevent echo)
         this.setupRemoteAudioAnalysis(stream);
       };
 
@@ -213,6 +214,10 @@ class LuraWebRTCEngine {
         const offer = await this.pc.createOffer({
           offerToReceiveAudio: true,
         });
+        // Optimize SDP for 48kHz voice clarity, mono transmission, and packet loss concealment
+        if (offer.sdp) {
+          offer.sdp = this.optimizeOpusSdp(offer.sdp);
+        }
         await this.pc.setLocalDescription(offer);
         socketClient.send('webrtc:signal', {
           type: 'offer',
@@ -229,6 +234,14 @@ class LuraWebRTCEngine {
         options.onError(err);
       }
     }
+  }
+
+  private optimizeOpusSdp(sdp: string): string {
+    // Boost Opus parameters: Forward Error Correction enabled, 64kbps speech bitrate
+    return sdp.replace(
+      /a=rtpmap:(\d+) opus\/48000\/2/g,
+      'a=rtpmap:$1 opus/48000/2\r\na=fmtp:$1 minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=64000;cbr=0'
+    );
   }
 
   private async handleIncomingSignal(payload: any, isInitiator: boolean) {
@@ -248,25 +261,20 @@ class LuraWebRTCEngine {
       if (payload.type === 'offer') {
         const isCollision =
           this.pc.signalingState !== 'stable' &&
-          this.pc.signalingState !== 'have-remote-offer';
+          this.isSettingRemote;
 
-        if (isCollision) {
-          if (!isInitiator) {
-            await this.pc.setLocalDescription({ type: 'rollback' } as any);
-          } else {
-            return;
-          }
-        }
+        if (!isCollision || !isInitiator) {
+          this.isSettingRemote = true;
+          await this.pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
+          this.isSettingRemote = false;
+          await this.flushQueuedIceCandidates();
 
-        this.isSettingRemote = true;
-        await this.pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
-        this.isSettingRemote = false;
-
-        await this.flushQueuedIceCandidates();
-
-        if (this.pc.signalingState === 'have-remote-offer') {
           const answer = await this.pc.createAnswer();
+          if (answer.sdp) {
+            answer.sdp = this.optimizeOpusSdp(answer.sdp);
+          }
           await this.pc.setLocalDescription(answer);
+
           socketClient.send('webrtc:signal', {
             type: 'answer',
             answer: answer,
@@ -331,17 +339,8 @@ class LuraWebRTCEngine {
       this.remoteAnalyser = ctx.createAnalyser();
       this.remoteAnalyser.fftSize = 256;
       this.remoteAnalyser.smoothingTimeConstant = 0.4;
+      // Connect ONLY to analyser node for visual waves (NEVER to destination to prevent echo)
       this.remoteAudioSource.connect(this.remoteAnalyser);
-
-      // Connect remote analyser to speakers through Web Audio destination as backup
-      try {
-        const gainNode = ctx.createGain();
-        gainNode.gain.value = this.isDeafened ? 0 : 1;
-        this.remoteAnalyser.connect(gainNode);
-        gainNode.connect(ctx.destination);
-      } catch (e) {
-        console.warn('Web Audio direct destination routing skipped', e);
-      }
     } catch (err) {
       console.warn('Remote AudioContext analysis setup failed', err);
     }

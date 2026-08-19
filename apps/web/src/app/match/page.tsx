@@ -247,6 +247,11 @@ function MatchPageContent() {
     });
 
     const unsubChat = socketClient.on('chat:message', (payload: any) => {
+      // Ignore if sender is self (since sender already rendered optimistically)
+      const currentUid = useUserStore.getState().user?.id;
+      if (payload.senderId === currentUid || payload.senderId === 'me') {
+        return;
+      }
       addMessage(payload);
     });
 

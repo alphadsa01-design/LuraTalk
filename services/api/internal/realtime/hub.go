@@ -667,7 +667,7 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			"timestamp":         time.Now().UnixMilli(),
 		}
 
-		h.broadcastToRoom(client.ActiveRoom, "chat:message", chatMsg)
+		h.broadcastToRoomExcept(client.ActiveRoom, client.UserID, "chat:message", chatMsg)
 
 	case "chat:typing":
 		if client.ActiveRoom != "" {
