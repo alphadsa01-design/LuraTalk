@@ -107,6 +107,12 @@ func main() {
 
 	r.Use(cors.Handler(corsOpts))
 
+	// Root API Info & Status
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"name":"LuraTalk Production API","status":"healthy","version":"1.0.0","service":"luratalk-api","timestamp":%d,"endpoints":{"health":"/health","ws":"/ws","api":"/api/v1"}}`, time.Now().UnixMilli())
+	})
+
 	// Health Check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
