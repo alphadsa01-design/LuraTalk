@@ -34,6 +34,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     updatePreferences,
   } = useUserStore();
 
+  const [username, setUsername] = useState(user?.username || 'NeonExplorer');
   const [bio, setBio] = useState(user?.bio || 'Curious about tech, late-night chats, and good music.');
   const [questionAnswer, setQuestionAnswer] = useState(oneQuestionAnswer || '');
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -41,9 +42,17 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const currentAvatar =
     AVATAR_PRESETS.find((a) => a.id === avatarId) || AVATAR_PRESETS[0];
 
+  const rollNewUsername = () => {
+    const prefixes = ['Radiant', 'Starlit', 'Neon', 'Cosmic', 'Solar', 'Velvet', 'Lunar', 'Echo', 'Shadow', 'Mystic', 'Nova', 'Vivid'];
+    const nouns = ['Drifter', 'Voyager', 'Phoenix', 'Beacon', 'Nomad', 'Whisper', 'Rider', 'Pulse', 'Cipher', 'Vibe', 'Spark', 'Wanderer'];
+    const num = Math.floor(Math.random() * 900) + 100;
+    const newName = `${prefixes[Math.floor(Math.random() * prefixes.length)]}${nouns[Math.floor(Math.random() * nouns.length)]}${num}`;
+    setUsername(newName);
+  };
+
   const handleSave = () => {
     updatePreferences({
-      user: { ...(user || {}), bio },
+      user: { ...(user || {}), username, bio },
       oneQuestionAnswer: questionAnswer,
     });
     setSavedSuccess(true);
@@ -77,14 +86,14 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-white leading-none">
-                  {user?.username || 'Anonymous User'}
+                  {username || user?.username || 'Anonymous User'}
                 </h3>
-                <span className="px-2 py-0.5 rounded-full bg-white/10 text-gray-400 text-[10px] font-mono flex items-center gap-1">
-                  <Lock className="w-2.5 h-2.5" />
-                  Locked
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono flex items-center gap-1">
+                  <ShieldCheck className="w-2.5 h-2.5" />
+                  Active
                 </span>
               </div>
-              <p className="text-[11px] text-gray-400 mt-1">System-Assigned Anonymous Identity</p>
+              <p className="text-[11px] text-gray-400 mt-1">Customize your voice persona &amp; match identity</p>
             </div>
           </div>
 
@@ -98,6 +107,30 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
         {/* Form Body */}
         <div className="space-y-4">
+          {/* Custom Username / Alias */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider">
+                Display Name / Alias
+              </label>
+              <button
+                type="button"
+                onClick={rollNewUsername}
+                className="text-[11px] font-semibold text-secondary hover:text-secondary-hover transition-colors flex items-center gap-1"
+              >
+                🎲 Roll Random Alias
+              </button>
+            </div>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="e.g. RadiantDrifter42"
+              maxLength={24}
+              className="w-full bg-surfaceLight border border-white/10 rounded-2xl p-3 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-secondary transition-colors"
+            />
+          </div>
+
           {/* Mystery Bio */}
           <div>
             <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-1.5">

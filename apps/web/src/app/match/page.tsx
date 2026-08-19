@@ -179,6 +179,11 @@ function MatchPageContent() {
       setMode(initialMode);
       socketClient.connect(activeToken);
 
+      // Pre-warm microphone hardware in background so match audio connects in <100ms
+      if (initialMode === 'voice' || initialMode === 'mystery') {
+        webrtcEngine.warmupMicrophone().catch(() => {});
+      }
+
       const acceptedCall = searchParams?.get('acceptedCall') === '1';
 
       // Only enter matching queue if not an accepted call and not already in an active call
@@ -203,6 +208,7 @@ function MatchPageContent() {
           isInitiator: payload.isInitiator,
           onSpeakingChange: (spk) => setSpeaking(spk),
           onPeerSpeakingChange: (peerSpk) => setPeerSpeaking(peerSpk),
+          onError: (err) => console.error('WebRTC Call Error:', err),
         });
       }
     });

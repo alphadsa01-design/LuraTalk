@@ -10,6 +10,7 @@ const config: Config = {
     extend: {
       colors: {
         background: "#08090d",
+        foreground: "#f3f4f6",
         surface: "#0f111a",
         surfaceLight: "#181b2a",
         primary: {

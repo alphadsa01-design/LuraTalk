@@ -22,6 +22,7 @@ import {
   History,
 } from 'lucide-react';
 import { useUserStore, AVATAR_PRESETS, getDicebearAvatarUrl } from '@/stores/useUserStore';
+import { getOrCreateAnonymousSession } from '@/lib/api';
 import ProfileModal from '@/components/ProfileModal';
 import AudioSettingsModal from '@/components/AudioSettingsModal';
 import LuraLogo from '@/components/LuraLogo';
@@ -29,7 +30,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { user, avatarId, avatarSeed, setAvatar, rollRandomAvatar, mood, intention } = useUserStore();
+  const { user, avatarId, avatarSeed, setAuth, setAvatar, rollRandomAvatar, mood, intention } = useUserStore();
   const [mounted, setMounted] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isFullProfileModalOpen, setIsFullProfileModalOpen] = useState(false);
@@ -41,7 +42,18 @@ export default function Navbar() {
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    if (!user) {
+      getOrCreateAnonymousSession()
+        .then((data) => {
+          if (data && data.token && data.user) {
+            setAuth(data.token, data.user);
+          }
+        })
+        .catch((err) => {
+          console.warn('Anonymous session init deferred', err);
+        });
+    }
+  }, [user, setAuth]);
 
   // Close dropdown on outside click
   useEffect(() => {

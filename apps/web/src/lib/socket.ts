@@ -20,10 +20,18 @@ class AuraSocketClient {
       return;
     }
 
-    this.token = token;
-    this.isConnecting = true;
+    let wsUrl = process.env.NEXT_PUBLIC_WS_URL;
+    if (!wsUrl) {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' && window.location.hostname !== 'localhost' ? 'https://luratalk.onrender.com' : 'http://localhost:8080');
+      wsUrl = apiBase.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:') + '/ws';
+    } else {
+      // Auto-correct http/https prefixes to ws/wss
+      wsUrl = wsUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+      if (!wsUrl.includes('/ws')) {
+        wsUrl = wsUrl.replace(/\/+$/, '') + '/ws';
+      }
+    }
 
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080/ws';
     const urlWithToken = `${wsUrl}?token=${encodeURIComponent(token)}`;
 
     try {

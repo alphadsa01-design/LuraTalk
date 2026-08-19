@@ -1,6 +1,16 @@
-// AuraVoice Client API SDK
+function getApiBase(): string {
+  let url = process.env.NEXT_PUBLIC_API_URL;
+  if (!url) {
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      url = 'https://luratalk.onrender.com';
+    } else {
+      url = 'http://localhost:8080';
+    }
+  }
+  return url.replace(/\/+$/, '');
+}
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const API_BASE = getApiBase();
 
 export interface UserPreferencesPayload {
   username?: string;
