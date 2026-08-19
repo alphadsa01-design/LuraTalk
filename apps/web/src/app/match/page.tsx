@@ -692,88 +692,153 @@ function MatchPageContent() {
         </div>
       )}
 
-      {/* Bottom In-Call Dock (Ergonomic for Mobile & Desktop) */}
+      {/* Bottom In-Call Dock (Ultra-Ergonomic for Mobile & Desktop) */}
       {status === 'matched' && (
-        <div className="fixed bottom-4 sm:bottom-6 left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto z-40 max-w-lg w-[calc(100%-1.5rem)] sm:w-auto glass-panel-glow p-2 sm:p-2.5 rounded-2xl sm:rounded-3xl border border-white/15 flex items-center justify-between gap-2 sm:gap-3 shadow-2xl backdrop-blur-3xl">
-          {/* Mute Mic */}
-          <button
-            onClick={toggleMute}
-            className={`w-11 h-11 sm:w-12 sm:h-12 flex-shrink-0 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all ${
-              isMuted
-                ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30'
-                : 'bg-surfaceLight hover:bg-white/10 text-gray-200 border border-white/10'
-            }`}
-            title={isMuted ? 'Unmute Mic' : 'Mute Mic'}
-          >
-            {isMuted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5" />}
-          </button>
+        <div className="fixed bottom-3 sm:bottom-6 left-2.5 right-2.5 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto z-40 max-w-lg sm:w-auto glass-panel-glow p-2 sm:p-2.5 rounded-3xl border border-white/20 shadow-2xl backdrop-blur-3xl flex flex-col sm:flex-row gap-2 sm:gap-3 pb-[max(0.6rem,env(safe-area-inset-bottom))]">
+          {/* Mobile Top Quick Utility Strip (Hidden on Desktop) */}
+          <div className="flex sm:hidden items-center justify-between gap-1 px-1">
+            <button
+              onClick={() => setIsChatOpen(!isChatOpen)}
+              className={`flex-1 py-1.5 px-2 rounded-xl flex items-center justify-center gap-1 text-[11px] font-bold transition-all ${
+                isChatOpen
+                  ? 'bg-primary text-white shadow-md shadow-primary/30'
+                  : 'bg-surfaceLight/80 text-gray-300 border border-white/10'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Chat</span>
+            </button>
 
-          {/* Deafen Audio */}
-          <button
-            onClick={toggleDeafen}
-            className={`w-11 h-11 sm:w-12 sm:h-12 flex-shrink-0 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all ${
-              isDeafened
-                ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
-                : 'bg-surfaceLight hover:bg-white/10 text-gray-200 border border-white/10'
-            }`}
-            title={isDeafened ? 'Enable Speaker' : 'Deafen Audio'}
-          >
-            {isDeafened ? <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" /> : <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />}
-          </button>
+            <button
+              onClick={() => setIsGameMenuOpen(!isGameMenuOpen)}
+              className={`flex-1 py-1.5 px-2 rounded-xl flex items-center justify-center gap-1 text-[11px] font-bold transition-all ${
+                isGameMenuOpen
+                  ? 'bg-accent-pink text-white shadow-md shadow-pink-500/30'
+                  : 'bg-surfaceLight/80 text-accent-pink border border-white/10'
+              }`}
+            >
+              <Gamepad2 className="w-3.5 h-3.5 text-accent-pink" />
+              <span>Games</span>
+            </button>
 
-          {/* Friend Request */}
-          <button
-            onClick={handleSendFriendRequest}
-            disabled={friendRequested}
-            className={`w-11 h-11 sm:w-12 sm:h-12 flex-shrink-0 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all ${
-              friendRequested
-                ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
-                : 'bg-surfaceLight hover:bg-white/10 text-white border border-white/10'
-            }`}
-            title={friendRequested ? 'Friend Added' : 'Add Friend'}
-          >
-            <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
-          </button>
+            <button
+              onClick={handleSendFriendRequest}
+              disabled={friendRequested}
+              className={`flex-1 py-1.5 px-2 rounded-xl flex items-center justify-center gap-1 text-[11px] font-bold transition-all ${
+                friendRequested
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'bg-surfaceLight/80 text-emerald-400 border border-white/10'
+              }`}
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>{friendRequested ? 'Added' : 'Friend'}</span>
+            </button>
 
-          {/* Launch In-Call Game */}
-          <button
-            onClick={() => setIsGameMenuOpen(!isGameMenuOpen)}
-            className={`w-11 h-11 sm:w-12 sm:h-12 flex-shrink-0 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all ${
-              isGameMenuOpen
-                ? 'bg-accent-pink/30 text-accent-pink border border-accent-pink/50 shadow-lg shadow-pink-500/20'
-                : 'bg-surfaceLight hover:bg-white/10 text-gray-200 border border-white/10'
-            }`}
-            title="Launch Mini-Game"
-          >
-            <Gamepad2 className="w-4 h-4 sm:w-5 sm:h-5 text-accent-pink" />
-          </button>
+            <button
+              onClick={toggleDeafen}
+              className={`py-1.5 px-2.5 rounded-xl flex items-center justify-center text-[11px] font-bold transition-all ${
+                isDeafened
+                  ? 'bg-amber-500 text-white shadow-md shadow-amber-500/30'
+                  : 'bg-surfaceLight/80 text-gray-300 border border-white/10'
+              }`}
+              title={isDeafened ? 'Enable Audio' : 'Deafen'}
+            >
+              {isDeafened ? <VolumeX className="w-3.5 h-3.5 text-white" /> : <Volume2 className="w-3.5 h-3.5" />}
+            </button>
 
-          {/* Skip / Next Match */}
-          <button
-            onClick={handleNextMatch}
-            className="flex-1 h-11 sm:h-12 min-w-[100px] flex items-center justify-center gap-1.5 px-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-primary via-indigo-500 to-secondary text-white text-xs sm:text-sm font-bold shadow-lg shadow-primary/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
-          >
-            <SkipForward className="w-4 h-4" />
-            <span>Next</span>
-          </button>
+            <button
+              onClick={() => setIsSafetyOpen(true)}
+              className="py-1.5 px-2.5 rounded-xl flex items-center justify-center bg-surfaceLight/80 text-rose-300 border border-white/10 text-[11px] font-bold"
+              title="Report & Safety"
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+            </button>
+          </div>
 
-          {/* Report & Block */}
-          <button
-            onClick={() => setIsSafetyOpen(true)}
-            className="w-11 h-11 sm:w-12 sm:h-12 flex-shrink-0 rounded-xl sm:rounded-2xl flex items-center justify-center bg-surfaceLight hover:bg-rose-500/20 text-gray-400 hover:text-rose-400 border border-white/10 transition-colors"
-            title="Safety Report & Block"
-          >
-            <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
+          {/* Primary Action Buttons (Large, high-contrast, easy to tap on all phones) */}
+          <div className="flex items-center justify-between gap-2 w-full sm:w-auto">
+            {/* Mute Button */}
+            <button
+              onClick={toggleMute}
+              className={`h-12 sm:h-12 px-4 sm:px-3 flex items-center justify-center gap-2 rounded-2xl transition-all active:scale-95 ${
+                isMuted
+                  ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 ring-2 ring-rose-400'
+                  : 'bg-surfaceLight hover:bg-white/15 text-white border border-white/15'
+              }`}
+              title={isMuted ? 'Unmute' : 'Mute'}
+            >
+              {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 text-emerald-400" />}
+              <span className="text-xs font-bold sm:hidden">{isMuted ? 'Muted' : 'Mute'}</span>
+            </button>
 
-          {/* End Call */}
-          <button
-            onClick={handleLeaveCall}
-            className="w-11 h-11 sm:w-12 sm:h-12 flex-shrink-0 rounded-xl sm:rounded-2xl flex items-center justify-center bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/30 transition-all"
-            title="End Call"
-          >
-            <PhoneOff className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
+            {/* Desktop-only secondary utility icons */}
+            <div className="hidden sm:flex items-center gap-2">
+              <button
+                onClick={toggleDeafen}
+                className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${
+                  isDeafened
+                    ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
+                    : 'bg-surfaceLight hover:bg-white/10 text-gray-200 border border-white/10'
+                }`}
+                title={isDeafened ? 'Enable Audio' : 'Deafen'}
+              >
+                {isDeafened ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              </button>
+
+              <button
+                onClick={handleSendFriendRequest}
+                disabled={friendRequested}
+                className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${
+                  friendRequested
+                    ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-surfaceLight hover:bg-white/10 text-white border border-white/10'
+                }`}
+                title={friendRequested ? 'Friend Added' : 'Add Friend'}
+              >
+                <UserPlus className="w-5 h-5 text-emerald-400" />
+              </button>
+
+              <button
+                onClick={() => setIsGameMenuOpen(!isGameMenuOpen)}
+                className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${
+                  isGameMenuOpen
+                    ? 'bg-accent-pink/30 text-accent-pink border border-accent-pink/50 shadow-lg shadow-pink-500/20'
+                    : 'bg-surfaceLight hover:bg-white/10 text-gray-200 border border-white/10'
+                }`}
+                title="Launch Mini-Game"
+              >
+                <Gamepad2 className="w-5 h-5 text-accent-pink" />
+              </button>
+            </div>
+
+            {/* Skip / Next Hero Button */}
+            <button
+              onClick={handleNextMatch}
+              className="flex-1 sm:flex-initial h-12 min-w-[120px] sm:min-w-[140px] px-5 sm:px-6 rounded-2xl bg-gradient-to-r from-primary via-indigo-500 to-secondary text-white text-xs sm:text-sm font-black shadow-xl shadow-primary/30 hover:scale-[1.03] active:scale-[0.97] transition-all flex items-center justify-center gap-2 border border-white/20"
+            >
+              <SkipForward className="w-4 h-4" />
+              <span>Next Match</span>
+            </button>
+
+            {/* Desktop Safety button */}
+            <button
+              onClick={() => setIsSafetyOpen(true)}
+              className="hidden sm:flex w-12 h-12 rounded-2xl items-center justify-center bg-surfaceLight hover:bg-rose-500/20 text-gray-400 hover:text-rose-400 border border-white/10 transition-colors"
+              title="Safety Report & Block"
+            >
+              <ShieldAlert className="w-5 h-5" />
+            </button>
+
+            {/* End Call Button */}
+            <button
+              onClick={handleLeaveCall}
+              className="h-12 sm:h-12 px-4 sm:px-4 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white border border-rose-400/40 shadow-lg shadow-rose-500/30 transition-all active:scale-95 flex items-center justify-center gap-1.5 font-bold text-xs"
+              title="End Call"
+            >
+              <PhoneOff className="w-5 h-5" />
+              <span className="sm:hidden">End</span>
+            </button>
+          </div>
         </div>
       )}
 

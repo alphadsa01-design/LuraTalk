@@ -48,12 +48,8 @@ export default function GameOverlay({ currentUserId, onSendAction }: GameOverlay
   // --- Handlers ---
   const handleTicTacToeMove = (idx: number) => {
     if (board[idx] !== '' || status === 'won' || status === 'draw') return;
+    if (!isMyTurn) return;
     sounds.playClick();
-
-    // Optimistic local update in store
-    const nextBoard = [...board];
-    nextBoard[idx] = 'X';
-    useGameStore.setState({ board: nextBoard });
 
     onSendAction('move', 'tictactoe', { cell: idx });
   };

@@ -145,6 +145,11 @@ func (gm *GameManager) HandleAction(roomName, userID string, actionType string, 
 				return session, nil
 			}
 
+			// Strict turn validation according to Tic-Tac-Toe rules
+			if session.Turn != "" && session.Turn != userID && len(session.Players) > 1 {
+				return session, nil
+			}
+
 			symbol := "X"
 			if len(session.Players) > 1 && userID == session.Players[1] {
 				symbol = "O"
@@ -152,7 +157,7 @@ func (gm *GameManager) HandleAction(roomName, userID string, actionType string, 
 
 			session.Board[cell] = symbol
 
-			// Check winner
+			// Check winner across 3 rows, 3 columns, and 2 diagonals
 			if checkTicTacToeWinner(session.Board, symbol) {
 				session.Status = "won"
 				session.Winner = userID
@@ -160,7 +165,7 @@ func (gm *GameManager) HandleAction(roomName, userID string, actionType string, 
 			} else if isBoardFull(session.Board) {
 				session.Status = "draw"
 			} else {
-				// Switch turn
+				// Switch turn to opposing player
 				if len(session.Players) > 1 {
 					if session.Turn == session.Players[0] {
 						session.Turn = session.Players[1]
@@ -173,6 +178,14 @@ func (gm *GameManager) HandleAction(roomName, userID string, actionType string, 
 			session.Board = [9]string{}
 			session.Status = "in_progress"
 			session.Winner = ""
+			// Alternate starting player on rematch
+			if len(session.Players) > 1 {
+				if session.Turn == session.Players[0] {
+					session.Turn = session.Players[1]
+				} else {
+					session.Turn = session.Players[0]
+				}
+			}
 		}
 
 	case GameWouldYouRather:
