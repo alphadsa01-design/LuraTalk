@@ -136,16 +136,15 @@ class LuraWebRTCEngine {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
           { urls: 'stun:stun.cloudflare.com:3478' },
+          { urls: 'stun:global.stun.twilio.com:3478' },
         ],
-        iceCandidatePoolSize: 6,
+        iceCandidatePoolSize: 8,
         bundlePolicy: 'max-bundle',
       });
 
-      // Add bidirectional audio transceiver with high priority
-      this.pc.addTransceiver('audio', { direction: 'sendrecv' });
-
-      // Add local audio tracks to peer connection
+      // Add local audio track directly to RTCPeerConnection (automatically configures bidirectional transceiver)
       this.localStream.getAudioTracks().forEach((track) => {
         track.enabled = !this.isMuted;
         if (this.pc && this.localStream) {
@@ -155,7 +154,7 @@ class LuraWebRTCEngine {
 
       // Handle incoming remote audio track
       this.pc.ontrack = (event) => {
-        console.log('WebRTC received remote audio track', event.track.id);
+        console.log('[WebRTC] Received remote audio track:', event.track.id, 'Kind:', event.track.kind);
         const stream =
           event.streams && event.streams[0]
             ? event.streams[0]
@@ -168,9 +167,19 @@ class LuraWebRTCEngine {
           this.remoteAudio.srcObject = stream;
           this.remoteAudio.volume = 1.0;
           this.remoteAudio.muted = this.isDeafened;
-          this.remoteAudio.play().catch((err) => {
-            console.warn('Autoplay prevented remote audio, awaiting user gesture', err);
-          });
+          const playPromise = this.remoteAudio.play();
+          if (playPromise !== undefined) {
+            playPromise.catch((err) => {
+              console.warn('[WebRTC] Autoplay prevented remote audio, awaiting user gesture:', err);
+              const unlockAudio = () => {
+                this.remoteAudio?.play().catch(() => {});
+                document.removeEventListener('click', unlockAudio);
+                document.removeEventListener('touchstart', unlockAudio);
+              };
+              document.addEventListener('click', unlockAudio, { once: true });
+              document.addEventListener('touchstart', unlockAudio, { once: true });
+            });
+          }
         }
 
         // Route 2: Visual Frequency & Speech Detection Analyser ONLY (Never piped to destination to prevent echo)
@@ -189,9 +198,9 @@ class LuraWebRTCEngine {
 
       this.pc.oniceconnectionstatechange = () => {
         const state = this.pc?.iceConnectionState;
-        console.log('WebRTC ICE Connection State:', state);
+        console.log('[WebRTC] ICE Connection State:', state);
         if (state === 'failed') {
-          console.warn('ICE connection failed, triggering ICE restart');
+          console.warn('[WebRTC] ICE connection failed, restarting ICE');
           this.pc?.restartIce();
         } else if (state === 'connected' || state === 'completed') {
           this.resumeAudio();
@@ -210,7 +219,6 @@ class LuraWebRTCEngine {
         const offer = await this.pc.createOffer({
           offerToReceiveAudio: true,
         });
-        // Optimize SDP for 48kHz voice clarity, mono transmission, and packet loss concealment
         if (offer.sdp) {
           offer.sdp = this.optimizeOpusSdp(offer.sdp);
         }
@@ -233,11 +241,22 @@ class LuraWebRTCEngine {
   }
 
   private optimizeOpusSdp(sdp: string): string {
-    // Boost Opus parameters: Forward Error Correction enabled, 64kbps speech bitrate
-    return sdp.replace(
-      /a=rtpmap:(\d+) opus\/48000\/2/g,
-      'a=rtpmap:$1 opus/48000/2\r\na=fmtp:$1 minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=64000;cbr=0'
-    );
+    // Locate Opus payload type in SDP (e.g. 111)
+    const opusMatch = sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i);
+    if (!opusMatch) return sdp;
+    const pt = opusMatch[1];
+
+    const fmtpRegex = new RegExp(`a=fmtp:${pt} (.*)`, 'g');
+    const enhancedFmtp = `a=fmtp:${pt} minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=64000;cbr=0`;
+
+    if (fmtpRegex.test(sdp)) {
+      return sdp.replace(fmtpRegex, enhancedFmtp);
+    } else {
+      return sdp.replace(
+        new RegExp(`a=rtpmap:${pt} opus/48000/2`, 'i'),
+        `a=rtpmap:${pt} opus/48000/2\r\n${enhancedFmtp}`
+      );
+    }
   }
 
   private async handleIncomingSignal(payload: any, isInitiator: boolean) {
@@ -255,27 +274,35 @@ class LuraWebRTCEngine {
 
     try {
       if (payload.type === 'offer') {
-        const isCollision =
-          this.pc.signalingState !== 'stable' &&
-          this.isSettingRemote;
-
-        if (!isCollision || !isInitiator) {
-          this.isSettingRemote = true;
-          await this.pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
-          this.isSettingRemote = false;
-          await this.flushQueuedIceCandidates();
-
-          const answer = await this.pc.createAnswer();
-          if (answer.sdp) {
-            answer.sdp = this.optimizeOpusSdp(answer.sdp);
+        // Handle glare / offer collision gracefully
+        if (this.pc.signalingState !== 'stable') {
+          if (!isInitiator) {
+            try {
+              await this.pc.setLocalDescription({ type: 'rollback' });
+            } catch (e) {
+              console.warn('[WebRTC] Rollback ignored', e);
+            }
+          } else {
+            // Initiator ignores incoming offer collision
+            return;
           }
-          await this.pc.setLocalDescription(answer);
-
-          socketClient.send('webrtc:signal', {
-            type: 'answer',
-            answer: answer,
-          });
         }
+
+        this.isSettingRemote = true;
+        await this.pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
+        this.isSettingRemote = false;
+        await this.flushQueuedIceCandidates();
+
+        const answer = await this.pc.createAnswer();
+        if (answer.sdp) {
+          answer.sdp = this.optimizeOpusSdp(answer.sdp);
+        }
+        await this.pc.setLocalDescription(answer);
+
+        socketClient.send('webrtc:signal', {
+          type: 'answer',
+          answer: answer,
+        });
       } else if (payload.type === 'answer') {
         if (this.pc.signalingState === 'have-local-offer') {
           this.isSettingRemote = true;
@@ -288,14 +315,14 @@ class LuraWebRTCEngine {
           try {
             await this.pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
           } catch (e) {
-            console.warn('Could not add ICE candidate directly', e);
+            console.warn('[WebRTC] Could not add ICE candidate directly', e);
           }
         } else {
           this.iceCandidatesQueue.push(payload.candidate);
         }
       }
     } catch (err) {
-      console.warn('Handled WebRTC signal edge case', err);
+      console.warn('[WebRTC] Handled WebRTC signal edge case:', err);
     }
   }
 
