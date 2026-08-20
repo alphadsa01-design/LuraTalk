@@ -6,6 +6,7 @@ export interface WebRTCVoiceOptions {
   isInitiator: boolean;
   onSpeakingChange?: (isSpeaking: boolean) => void;
   onPeerSpeakingChange?: (isPeerSpeaking: boolean) => void;
+  onDisconnected?: () => void;
   onError?: (err: Error) => void;
 }
 
@@ -204,6 +205,17 @@ class LuraWebRTCEngine {
           this.pc?.restartIce();
         } else if (state === 'connected' || state === 'completed') {
           this.resumeAudio();
+        } else if (state === 'disconnected') {
+          console.log('[WebRTC] ICE state disconnected, peer likely left');
+          options.onDisconnected?.();
+        }
+      };
+
+      this.pc.onconnectionstatechange = () => {
+        const state = this.pc?.connectionState;
+        console.log('[WebRTC] Connection State:', state);
+        if (state === 'disconnected' || state === 'failed') {
+          options.onDisconnected?.();
         }
       };
 

@@ -309,12 +309,12 @@ export default function RoomsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-xs font-semibold text-cyan-300 mb-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-semibold text-neutral-300 mb-2">
             <Compass className="w-3.5 h-3.5" />
             <span>Community Voice Lounges</span>
           </div>
           <h1 className="text-3xl font-extrabold text-white">Explore Topic Lounges</h1>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-sm text-neutral-400 mt-1">
             Drop into moderated small-group voice stages by topic and passion.
           </p>
         </div>
@@ -324,7 +324,7 @@ export default function RoomsPage() {
             sounds.playClick();
             setIsCreateModalOpen(true);
           }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-xs font-bold shadow-lg shadow-primary/25 hover:scale-105 transition-all self-start"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-black text-xs font-bold shadow-lg shadow-white/10 hover:bg-neutral-200 transition-all self-start"
         >
           <Plus className="w-4 h-4" />
           <span>Host a Lounge</span>
@@ -353,20 +353,20 @@ export default function RoomsPage() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="glass-panel-glow rounded-3xl p-5 sm:p-7 border border-cyan-500/40 relative overflow-hidden space-y-6"
+            className="glass-panel-glow rounded-3xl p-5 sm:p-7 border border-white/20 relative overflow-hidden space-y-6"
           >
             {/* Top Stage Info Bar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center shadow-lg shadow-cyan-500/10">
+                <div className="w-11 h-11 rounded-2xl bg-white/10 text-white flex items-center justify-center shadow-lg">
                   <Radio className="w-5 h-5 animate-pulse" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[10px] font-bold uppercase">
+                    <span className="px-2 py-0.5 rounded-full bg-white/15 text-white text-[10px] font-bold uppercase">
                       Live Stage
                     </span>
-                    <span className="text-xs text-gray-400">{activeStage.room.topic}</span>
+                    <span className="text-xs text-neutral-400">{activeStage.room.topic}</span>
                   </div>
                   <h3 className="text-xl font-black text-white mt-0.5">{activeStage.room.title}</h3>
                 </div>
@@ -375,7 +375,7 @@ export default function RoomsPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleLeaveStage}
-                  className="px-4 py-2 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold hover:bg-rose-500/30 transition-all active:scale-95"
+                  className="px-4 py-2 rounded-xl bg-neutral-800 text-white border border-white/20 text-xs font-bold hover:bg-neutral-700 transition-all active:scale-95"
                 >
                   Leave Stage
                 </button>
@@ -385,7 +385,7 @@ export default function RoomsPage() {
             {/* Speakers Stage (Real Dynamic Avatars) */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                <h4 className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
                   Live Speakers On Stage ({stagePeers.length + 1})
                 </h4>
                 <button
@@ -396,7 +396,7 @@ export default function RoomsPage() {
                     }
                     alert('Lounge link copied to clipboard!');
                   }}
-                  className="px-3 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold transition-all flex items-center gap-1 active:scale-95"
+                  className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white border border-white/20 text-[11px] font-semibold transition-all flex items-center gap-1 active:scale-95"
                 >
                   <Sparkles className="w-3 h-3" />
                   <span>Share Lounge</span>
@@ -405,14 +405,14 @@ export default function RoomsPage() {
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {/* Active Current User on Stage */}
-                <div className="p-4 rounded-2xl bg-surfaceLight/80 border border-secondary/40 flex flex-col items-center text-center space-y-2 relative shadow-lg shadow-secondary/5">
+                <div className="p-4 rounded-2xl bg-surfaceLight/80 border border-white/20 flex flex-col items-center text-center space-y-2 relative shadow-lg">
                   <div className="relative">
                     <div className={`w-14 h-14 rounded-full bg-surface border-2 transition-all duration-200 ${
                       isStageMuted
-                        ? 'border-gray-500 opacity-80'
+                        ? 'border-neutral-500 opacity-80'
                         : isSelfSpeaking
-                        ? 'border-emerald-400 ring-4 ring-emerald-400/50 scale-105 shadow-lg shadow-emerald-500/20'
-                        : 'border-secondary ring-2 ring-secondary/20'
+                        ? 'border-white ring-4 ring-white/30 scale-105 shadow-lg shadow-white/20'
+                        : 'border-white/40'
                     } overflow-hidden flex items-center justify-center`}>
                       <img
                         src={getDicebearAvatarUrl(user?.avatarId || user?.username || 'Host')}
@@ -420,21 +420,21 @@ export default function RoomsPage() {
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <span className={`absolute -bottom-1 -right-1 p-1 rounded-full text-[9px] font-bold shadow ${isStageMuted ? 'bg-rose-500 text-white' : isSelfSpeaking ? 'bg-emerald-400 text-black animate-bounce' : 'bg-secondary text-black'}`}>
+                    <span className={`absolute -bottom-1 -right-1 p-1 rounded-full text-[9px] font-bold shadow ${isStageMuted ? 'bg-neutral-800 text-white' : isSelfSpeaking ? 'bg-white text-black animate-bounce' : 'bg-neutral-700 text-white'}`}>
                       {isStageMuted ? '🔇' : '🎙️'}
                     </span>
                   </div>
                   <div>
                     <p className="text-xs font-bold text-white flex items-center justify-center gap-1">
                       <span className="truncate max-w-[90px]">{user?.username || 'You'}</span>
-                      <span className="text-[10px] text-secondary font-normal">(You)</span>
+                      <span className="text-[10px] text-neutral-400 font-normal">(You)</span>
                     </p>
                     <span className={`text-[10px] font-mono font-medium ${
                       isStageMuted
-                        ? 'text-gray-400'
+                        ? 'text-neutral-400'
                         : isSelfSpeaking
-                        ? 'text-emerald-400 animate-pulse font-bold'
-                        : 'text-emerald-300/80'
+                        ? 'text-white animate-pulse font-bold'
+                        : 'text-neutral-300'
                     }`}>
                       {isStageMuted ? 'Muted' : isSelfSpeaking ? 'Speaking...' : 'Mic Ready'}
                     </span>
@@ -445,13 +445,13 @@ export default function RoomsPage() {
                 {stagePeers.map((peer) => (
                   <div
                     key={peer.id}
-                    className="p-4 rounded-2xl bg-surfaceLight/60 border border-cyan-500/30 flex flex-col items-center text-center space-y-2 relative shadow-lg animate-fadeIn"
+                    className="p-4 rounded-2xl bg-surfaceLight/60 border border-white/10 flex flex-col items-center text-center space-y-2 relative shadow-lg animate-fadeIn"
                   >
                     <div className="relative">
                       <div className={`w-14 h-14 rounded-full bg-surface border-2 transition-all duration-200 ${
                         isPeerSpeaking
-                          ? 'border-cyan-400 ring-4 ring-cyan-400/50 scale-105 shadow-lg shadow-cyan-500/25'
-                          : 'border-cyan-400/80 ring-2 ring-cyan-400/20'
+                          ? 'border-white ring-4 ring-white/30 scale-105 shadow-lg'
+                          : 'border-white/20'
                       } overflow-hidden flex items-center justify-center`}>
                         <img
                           src={getDicebearAvatarUrl(peer.avatarId || peer.username)}
@@ -459,13 +459,13 @@ export default function RoomsPage() {
                           className="w-full h-full object-cover"
                         />
                       </div>
-                      <span className={`absolute -bottom-1 -right-1 p-1 rounded-full text-[9px] font-bold shadow ${isPeerSpeaking ? 'bg-cyan-300 text-black animate-bounce' : 'bg-cyan-500 text-black'}`}>
+                      <span className={`absolute -bottom-1 -right-1 p-1 rounded-full text-[9px] font-bold shadow ${isPeerSpeaking ? 'bg-white text-black animate-bounce' : 'bg-neutral-800 text-white'}`}>
                         🎙️
                       </span>
                     </div>
                     <div>
                       <p className="text-xs font-bold text-white truncate max-w-[100px]">{peer.username}</p>
-                      <span className={`text-[10px] font-mono ${isPeerSpeaking ? 'text-cyan-300 font-bold animate-pulse' : 'text-gray-400'}`}>
+                      <span className={`text-[10px] font-mono ${isPeerSpeaking ? 'text-white font-bold animate-pulse' : 'text-neutral-400'}`}>
                         {isPeerSpeaking ? 'Speaking...' : 'Listening'}
                       </span>
                     </div>
@@ -475,10 +475,10 @@ export default function RoomsPage() {
                 {/* Invite Card if only 1 user */}
                 {stagePeers.length === 0 && (
                   <div className="col-span-1 sm:col-span-3 p-4 rounded-2xl bg-surfaceLight/30 border border-dashed border-white/20 flex flex-col justify-center items-center text-center space-y-2">
-                    <p className="text-xs font-semibold text-gray-200">
+                    <p className="text-xs font-semibold text-neutral-200">
                       You are on stage! Waiting for others to join...
                     </p>
-                    <p className="text-[11px] text-gray-400 max-w-sm">
+                    <p className="text-[11px] text-neutral-400 max-w-sm">
                       Share this lounge link with a friend or open it in a second tab to talk in real-time.
                     </p>
                   </div>
@@ -489,14 +489,14 @@ export default function RoomsPage() {
             {/* Room Info & Live Topic Tags */}
             <div className="p-3.5 rounded-2xl bg-black/30 border border-white/5 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-cyan-400" />
-                <span className="text-xs text-gray-300 font-medium">
+                <Users className="w-4 h-4 text-white" />
+                <span className="text-xs text-neutral-300 font-medium">
                   {activeStage.room.description}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
                 {activeStage.room.tags?.map((tag) => (
-                  <span key={tag} className="px-2 py-0.5 rounded-md bg-white/5 text-[10px] text-gray-400 font-mono">
+                  <span key={tag} className="px-2 py-0.5 rounded-md bg-white/5 text-[10px] text-neutral-400 font-mono">
                     #{tag}
                   </span>
                 ))}
@@ -513,8 +513,8 @@ export default function RoomsPage() {
                   }}
                   className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all ${
                     isStageMuted
-                      ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
-                      : 'bg-primary/20 border-primary/40 text-white'
+                      ? 'bg-neutral-800 border-white/20 text-neutral-300'
+                      : 'bg-white text-black border-white'
                   }`}
                 >
                   {isStageMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
@@ -528,8 +528,8 @@ export default function RoomsPage() {
                   }}
                   className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all ${
                     isHandRaised
-                      ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                      : 'bg-surfaceLight hover:bg-white/10 text-gray-300 border-white/10'
+                      ? 'bg-white/20 border-white/40 text-white'
+                      : 'bg-surfaceLight hover:bg-white/10 text-neutral-300 border-white/10'
                   }`}
                 >
                   <Hand className="w-3.5 h-3.5" />
@@ -574,8 +574,8 @@ export default function RoomsPage() {
               }}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
                 selectedCategory === cat
-                  ? 'bg-primary text-white shadow-md shadow-primary/25 font-bold'
-                  : 'bg-surfaceLight hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'
+                  ? 'bg-white text-black shadow-md shadow-white/10 font-bold'
+                  : 'bg-surfaceLight hover:bg-white/10 text-neutral-400 hover:text-white border border-white/5'
               }`}
             >
               {cat}
@@ -585,13 +585,13 @@ export default function RoomsPage() {
 
         {/* Search Box */}
         <div className="relative w-full sm:w-64">
-          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search lounges or #tags..."
-            className="w-full pl-9 pr-3 py-2 rounded-xl bg-surfaceLight border border-white/10 text-white text-xs placeholder:text-gray-500 focus:border-secondary outline-none transition-colors"
+            className="w-full pl-9 pr-3 py-2 rounded-xl bg-surfaceLight border border-white/10 text-white text-xs placeholder:text-neutral-500 focus:border-white/40 outline-none transition-colors"
           />
         </div>
       </div>
@@ -606,17 +606,17 @@ export default function RoomsPage() {
               key={room.id}
               className={`rounded-3xl p-5 sm:p-6 glass-card border transition-all duration-300 flex flex-col justify-between space-y-4 ${
                 isCurrentActive
-                  ? 'border-cyan-400 bg-cyan-500/10 shadow-xl shadow-cyan-500/10'
+                  ? 'border-white bg-white/10 shadow-xl shadow-white/5'
                   : 'border-white/10 hover:border-white/20'
               }`}
             >
               <div>
                 <div className="flex items-center justify-between gap-2 mb-3">
-                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[10px] font-bold uppercase tracking-wider">
+                  <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-white text-[10px] font-bold uppercase tracking-wider">
                     {room.topic}
                   </span>
-                  <div className="flex items-center gap-1.5 text-xs text-gray-400 font-mono">
-                    <Users className="w-3.5 h-3.5 text-cyan-400" />
+                  <div className="flex items-center gap-1.5 text-xs text-neutral-400 font-mono">
+                    <Users className="w-3.5 h-3.5 text-white" />
                     <span>
                       {room.currentParticipants}/{room.maxParticipants}
                     </span>
@@ -624,7 +624,7 @@ export default function RoomsPage() {
                 </div>
 
                 <h3 className="text-base sm:text-lg font-bold text-white leading-snug">{room.title}</h3>
-                <p className="text-xs text-gray-400 mt-1.5 leading-relaxed line-clamp-2">
+                <p className="text-xs text-neutral-400 mt-1.5 leading-relaxed line-clamp-2">
                   {room.description}
                 </p>
 
@@ -633,7 +633,7 @@ export default function RoomsPage() {
                   {(room.tags || []).slice(0, 3).map((tag, idx) => (
                     <span
                       key={idx}
-                      className="px-2 py-0.5 rounded-md bg-white/5 text-gray-400 text-[10px] font-medium"
+                      className="px-2 py-0.5 rounded-md bg-white/5 text-neutral-400 text-[10px] font-medium"
                     >
                       #{tag}
                     </span>
@@ -647,7 +647,7 @@ export default function RoomsPage() {
                   onClick={() => handleJoinStage(room)}
                   className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-95 ${
                     isCurrentActive
-                      ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/25 animate-pulse'
+                      ? 'bg-white text-black shadow-lg shadow-white/20 animate-pulse'
                       : 'bg-surfaceLight hover:bg-white/10 text-white border border-white/10'
                   }`}
                 >

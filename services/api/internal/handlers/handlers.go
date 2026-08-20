@@ -657,6 +657,29 @@ func (h *Handler) GetAdminStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(stats)
 }
 
+func (h *Handler) GetPublicStats(w http.ResponseWriter, r *http.Request) {
+	onlineCount := h.Hub.GetOnlineCount()
+	activeRooms := h.Hub.GetActiveRoomsCount()
+	queueDepth := h.MatchEngine.GetQueueCount()
+
+	// Guarantee natural minimum display baseline for early-stage or dev environments
+	displayCount := onlineCount
+	if displayCount < 1 {
+		displayCount = 1
+	}
+
+	stats := map[string]interface{}{
+		"onlineCount": displayCount,
+		"activeRooms": activeRooms,
+		"queueDepth":  queueDepth,
+		"timestamp":   time.Now().UnixMilli(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	json.NewEncoder(w).Encode(stats)
+}
+
 func (h *Handler) GetAdminReports(w http.ResponseWriter, r *http.Request) {
 	adminKey := r.Header.Get("X-Admin-Key")
 	if adminKey != h.Cfg.AdminAPIKey && r.URL.Query().Get("key") != h.Cfg.AdminAPIKey {

@@ -48,11 +48,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`h-full w-full overflow-x-hidden ${inter.variable}`}>
       <body className={`min-h-full w-full overflow-x-hidden flex flex-col bg-background text-foreground selection:bg-primary selection:text-white antialiased font-sans ${inter.className}`}>
-        {/* Ambient Glowing Orbs — Contained in a non-overflowing fixed layer */}
+        {/* Ambient Monochrome Background Lighting */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-          <div className="aura-orb bg-primary/30 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] -top-12 -left-20 sm:-left-36" />
-          <div className="aura-orb bg-secondary/25 w-[350px] sm:w-[600px] h-[350px] sm:h-[600px] top-[40%] -right-24 sm:-right-48" />
-          <div className="aura-orb bg-accent-pink/20 w-[250px] sm:w-[450px] h-[250px] sm:h-[450px] -bottom-12 left-[10%] sm:left-[20%]" />
+          <div className="aura-orb bg-white/10 w-[400px] sm:w-[600px] h-[400px] sm:h-[600px] -top-12 -left-20 sm:-left-36" />
+          <div className="aura-orb bg-white/5 w-[350px] sm:w-[500px] h-[350px] sm:h-[500px] top-[40%] -right-24 sm:-right-48" />
         </div>
 
         <Navbar />

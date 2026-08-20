@@ -286,3 +286,15 @@ export async function deleteCallHistory(token: string, historyId: string) {
   if (!res.ok) throw new Error('Failed to delete history record');
   return res.json();
 }
+
+export async function fetchLiveOnlineStats(): Promise<{ onlineCount: number; activeRooms: number; queueDepth: number }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/stats/online`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error('Failed to fetch stats');
+    return await res.json();
+  } catch (err) {
+    return { onlineCount: 1, activeRooms: 0, queueDepth: 0 };
+  }
+}

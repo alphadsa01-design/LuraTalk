@@ -123,6 +123,9 @@ func main() {
 		api.Get("/users/me", h.GetMe)
 		api.Put("/users/me/preferences", h.UpdatePreferences)
 
+		// Live Online Stats
+		api.Get("/stats/online", h.GetPublicStats)
+
 		// Topic Lounges / Rooms
 		api.Get("/rooms", h.GetRooms)
 		api.Post("/rooms", h.CreateRoom)
