@@ -230,9 +230,7 @@ function MatchPageContent() {
           onSpeakingChange: (spk) => setSpeaking(spk),
           onPeerSpeakingChange: (peerSpk) => setPeerSpeaking(peerSpk),
           onDisconnected: () => {
-            if (useCallStore.getState().status === 'matched') {
-              triggerAutoNextMatch();
-            }
+            console.log('[Match] WebRTC audio disconnected');
           },
           onError: (err) => console.error('WebRTC Call Error:', err),
         });

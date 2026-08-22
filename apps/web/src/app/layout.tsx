@@ -48,10 +48,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`h-full w-full overflow-x-hidden ${inter.variable}`}>
       <body className={`min-h-full w-full overflow-x-hidden flex flex-col bg-background text-foreground selection:bg-primary selection:text-white antialiased font-sans ${inter.className}`}>
-        {/* Ambient Monochrome Background Lighting */}
+        {/* Ambient Cosmic Glowing Background Lighting */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-          <div className="aura-orb bg-white/10 w-[400px] sm:w-[600px] h-[400px] sm:h-[600px] -top-12 -left-20 sm:-left-36" />
-          <div className="aura-orb bg-white/5 w-[350px] sm:w-[500px] h-[350px] sm:h-[500px] top-[40%] -right-24 sm:-right-48" />
+          <div className="aura-orb bg-primary/20 w-[450px] sm:w-[650px] h-[450px] sm:h-[650px] -top-12 -left-20 sm:-left-36" />
+          <div className="aura-orb bg-secondary/15 w-[400px] sm:w-[550px] h-[400px] sm:h-[550px] top-[35%] -right-24 sm:-right-48" />
+          <div className="aura-orb bg-accent-pink/10 w-[350px] sm:w-[500px] h-[350px] sm:h-[500px] -bottom-24 left-[20%]" />
         </div>
 
         <Navbar />

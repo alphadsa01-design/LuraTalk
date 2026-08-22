@@ -164,12 +164,21 @@ class LuraWebRTCEngine {
       if (this.onPeerSpeakingChange) this.onPeerSpeakingChange(isRemoteSpeaking);
     });
 
-    room.on(RoomEvent.Disconnected, () => {
-      options.onDisconnected?.();
-    });
+    // Try connecting with a 2-second timeout so fallback to TURN P2P WebRTC is fast & seamless
+    const connectPromise = room.connect(options.livekitUrl!, options.livekitToken!);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('LiveKit connect timeout')), 2500)
+    );
+    await Promise.race([connectPromise, timeoutPromise]);
 
-    await room.connect(options.livekitUrl!, options.livekitToken!);
     await room.localParticipant.setMicrophoneEnabled(!this.isMuted);
+
+    // Only attach disconnect listener after successful connection
+    room.on(RoomEvent.Disconnected, () => {
+      if (this.isCalling && this.isUsingLiveKit) {
+        options.onDisconnected?.();
+      }
+    });
 
     return true;
   }
