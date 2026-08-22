@@ -187,6 +187,11 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 3. Fallback to query string parameter (?token=)
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+
 	if token == "" {
 		http.Error(w, "Unauthorized: missing websocket authorization header or protocol", http.StatusUnauthorized)
 		return
@@ -204,7 +209,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := auth.GetUserByID(userUUID)
+	user, err := auth.EnsureUserExists(userUUID, claims.Username, claims.IsAnonymous)
 	if err != nil || user == nil || user.IsBanned {
 		http.Error(w, "Forbidden: account is suspended", http.StatusForbidden)
 		return

@@ -44,13 +44,9 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 				return
 			}
 
-			user, err := auth.GetUserByID(userUUID)
-			if err != nil {
-				http.Error(w, "Internal server error retrieving user", http.StatusInternalServerError)
-				return
-			}
-			if user == nil {
-				http.Error(w, "Unauthorized: user account not found", http.StatusUnauthorized)
+			user, err := auth.EnsureUserExists(userUUID, claims.Username, claims.IsAnonymous)
+			if err != nil || user == nil {
+				http.Error(w, "Unauthorized: user account error", http.StatusUnauthorized)
 				return
 			}
 

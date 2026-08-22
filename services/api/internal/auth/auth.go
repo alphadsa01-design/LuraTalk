@@ -180,3 +180,31 @@ func GetUserByID(userID uuid.UUID) (*models.User, error) {
 	}
 	return &user, nil
 }
+
+func EnsureUserExists(userID uuid.UUID, username string, isAnonymous bool) (*models.User, error) {
+	var user models.User
+	if err := database.DB.First(&user, "id = ?", userID).Error; err == nil {
+		return &user, nil
+	}
+
+	if username == "" {
+		username = fmt.Sprintf("User%s", userID.String()[:4])
+	}
+
+	user = models.User{
+		ID:          userID,
+		Username:    username,
+		AvatarID:    "avatar-1",
+		IsAnonymous: isAnonymous,
+		TrustScore:  100,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	if err := database.DB.Create(&user).Error; err != nil {
+		if err2 := database.DB.First(&user, "id = ?", userID).Error; err2 == nil {
+			return &user, nil
+		}
+		return nil, err
+	}
+	return &user, nil
+}

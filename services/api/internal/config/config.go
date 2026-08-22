@@ -130,12 +130,12 @@ func (c *Config) GetParsedAllowedOrigins() []string {
 }
 
 func (c *Config) IsOriginAllowed(origin string) bool {
-	if origin == "" {
-		return true // Non-browser/server-to-server requests
+	if origin == "" || c.Environment != "production" {
+		return true // Allow all in local/development or non-browser
 	}
 	allowed := c.GetParsedAllowedOrigins()
 	for _, a := range allowed {
-		if a == "*" || a == origin {
+		if a == "*" || a == origin || strings.HasSuffix(origin, ".vercel.app") {
 			return true
 		}
 	}

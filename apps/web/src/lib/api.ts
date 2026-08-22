@@ -2,7 +2,11 @@ function getApiBase(): string {
   let url = process.env.NEXT_PUBLIC_API_URL;
   if (!url) {
     if (typeof window !== 'undefined') {
-      url = window.location.origin;
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        url = 'http://localhost:8080';
+      } else {
+        url = window.location.origin;
+      }
     } else {
       url = 'http://localhost:8080';
     }
