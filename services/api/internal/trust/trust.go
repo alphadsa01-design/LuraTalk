@@ -23,9 +23,35 @@ type TrustEngine struct {
 }
 
 func NewTrustEngine() *TrustEngine {
-	return &TrustEngine{
+	te := &TrustEngine{
 		rateLimits: make(map[string][]time.Time),
 	}
+
+	// Periodic rate limits sweeper
+	go func() {
+		ticker := time.NewTicker(3 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			te.mu.Lock()
+			cutoff := time.Now().UTC().Add(-10 * time.Minute)
+			for key, timestamps := range te.rateLimits {
+				var valid []time.Time
+				for _, t := range timestamps {
+					if t.After(cutoff) {
+						valid = append(valid, t)
+					}
+				}
+				if len(valid) == 0 {
+					delete(te.rateLimits, key)
+				} else {
+					te.rateLimits[key] = valid
+				}
+			}
+			te.mu.Unlock()
+		}
+	}()
+
+	return te
 }
 
 // CheckRateLimit checks if user exceeded max actions per time window (e.g. 15 messages/min)
@@ -90,10 +116,6 @@ func (te *TrustEngine) UpdateTrustScore(userID uuid.UUID, delta int, reason stri
 	}
 
 	user.TrustScore = newScore
-	if newScore < 20 {
-		user.IsBanned = true // Automatic suspension for severe abuse
-	}
-
 	database.DB.Save(&user)
 	return newScore
 }

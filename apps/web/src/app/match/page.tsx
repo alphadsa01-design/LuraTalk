@@ -224,6 +224,9 @@ function MatchPageContent() {
       if (initialMode === 'voice' || initialMode === 'mystery') {
         webrtcEngine.startCall({
           isInitiator: payload.isInitiator,
+          livekitToken: payload.livekitToken,
+          livekitUrl: payload.livekitUrl,
+          roomName: payload.roomName,
           onSpeakingChange: (spk) => setSpeaking(spk),
           onPeerSpeakingChange: (peerSpk) => setPeerSpeaking(peerSpk),
           onDisconnected: () => {

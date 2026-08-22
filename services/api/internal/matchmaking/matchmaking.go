@@ -1,8 +1,6 @@
 package matchmaking
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -10,8 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"airtak/services/api/internal/models"
+
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 )
 
 type MatchMode string
@@ -61,40 +60,26 @@ type MatchedPair struct {
 }
 
 type MatchmakingEngine struct {
-	redisClient    *redis.Client
-	useRedis       bool
-	inMemoryQueue  map[string]*MatchTicket // key: ticketId
-	activeMatches  map[string]string       // userId -> matchId
-	recentMatches  map[string]map[string]time.Time // userId -> peerId -> matchedAt
-	userBlocks     map[string]map[string]bool      // userId -> blockedUserId -> true
-	mu             sync.RWMutex
-	matchCallback  func(pair *MatchedPair)
-	stopChan       chan struct{}
+	modeQueues    map[MatchMode]map[string]*MatchTicket // mode -> ticketId -> *MatchTicket
+	userToTicket  map[string]string                    // userId -> ticketId
+	ticketToMode  map[string]MatchMode                 // ticketId -> mode
+	activeMatches map[string]string                    // userId -> matchId
+	recentMatches map[string]map[string]time.Time      // userId -> peerId -> matchedAt
+	userBlocks    map[string]map[string]bool           // userId -> blockedUserId -> true
+	mu            sync.RWMutex
+	matchCallback func(pair *MatchedPair)
+	stopChan      chan struct{}
 }
 
-func NewEngine(redisURL string, matchCallback func(pair *MatchedPair)) *MatchmakingEngine {
-	var rdb *redis.Client
-	useRedis := false
-
-	if redisURL != "" {
-		opt, err := redis.ParseURL(redisURL)
-		if err == nil {
-			rdb = redis.NewClient(opt)
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			if err := rdb.Ping(ctx).Err(); err == nil {
-				useRedis = true
-				log.Println("MatchmakingEngine: connected to Redis for distributed atomic matchmaking queues.")
-			} else {
-				log.Println("MatchmakingEngine: Redis not reachable, operating in ultra-fast in-memory queue mode.")
-			}
-		}
-	}
-
+func NewEngine(_ string, matchCallback func(pair *MatchedPair)) *MatchmakingEngine {
 	engine := &MatchmakingEngine{
-		redisClient:   rdb,
-		useRedis:      useRedis,
-		inMemoryQueue: make(map[string]*MatchTicket),
+		modeQueues: map[MatchMode]map[string]*MatchTicket{
+			ModeVoice:   make(map[string]*MatchTicket),
+			ModeText:    make(map[string]*MatchTicket),
+			ModeMystery: make(map[string]*MatchTicket),
+		},
+		userToTicket:  make(map[string]string),
+		ticketToMode:  make(map[string]MatchMode),
 		activeMatches: make(map[string]string),
 		recentMatches: make(map[string]map[string]time.Time),
 		userBlocks:    make(map[string]map[string]bool),
@@ -103,15 +88,65 @@ func NewEngine(redisURL string, matchCallback func(pair *MatchedPair)) *Matchmak
 	}
 
 	go engine.matchLoop()
+	go engine.cleanupLoop()
 
 	return engine
+}
+
+// HydrateBlocks loads persistent database blocks into memory on server boot
+func (e *MatchmakingEngine) HydrateBlocks(blocks []models.Block) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	count := 0
+	for _, b := range blocks {
+		u1 := b.BlockerID.String()
+		u2 := b.BlockedID.String()
+		if e.userBlocks[u1] == nil {
+			e.userBlocks[u1] = make(map[string]bool)
+		}
+		e.userBlocks[u1][u2] = true
+		if e.userBlocks[u2] == nil {
+			e.userBlocks[u2] = make(map[string]bool)
+		}
+		e.userBlocks[u2][u1] = true
+		count++
+	}
+	log.Printf("MatchmakingEngine: Hydrated %d persistent blocks into matchmaking memory", count)
+}
+
+// cleanupLoop periodically sweeps stale in-memory matches to prevent memory leaks
+func (e *MatchmakingEngine) cleanupLoop() {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-e.stopChan:
+			return
+		case <-ticker.C:
+			e.mu.Lock()
+			cutoff := time.Now().Add(-30 * time.Minute)
+			for uID, peers := range e.recentMatches {
+				for pID, t := range peers {
+					if t.Before(cutoff) {
+						delete(peers, pID)
+					}
+				}
+				if len(peers) == 0 {
+					delete(e.recentMatches, uID)
+				}
+			}
+			e.mu.Unlock()
+		}
+	}
 }
 
 func (e *MatchmakingEngine) Stop() {
 	close(e.stopChan)
 }
 
-// JoinQueue submits a matchmaking ticket. Target execution time: < 50ms
+// JoinQueue submits a matchmaking ticket in O(1) time
 func (e *MatchmakingEngine) JoinQueue(ticket *MatchTicket) error {
 	if ticket.TicketID == "" {
 		ticket.TicketID = uuid.New().String()
@@ -122,50 +157,48 @@ func (e *MatchmakingEngine) JoinQueue(ticket *MatchTicket) error {
 	if ticket.TrustScore == 0 {
 		ticket.TrustScore = 100
 	}
+	if ticket.Mode == "" {
+		ticket.Mode = ModeVoice
+	}
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// Check if already in active match or remove prior ticket
-	for tid, t := range e.inMemoryQueue {
-		if t.UserID == ticket.UserID {
-			delete(e.inMemoryQueue, tid)
+	// O(1) removal of any prior ticket for this user
+	if oldTid, exists := e.userToTicket[ticket.UserID]; exists {
+		if oldMode, modeExists := e.ticketToMode[oldTid]; modeExists {
+			if q, ok := e.modeQueues[oldMode]; ok {
+				delete(q, oldTid)
+			}
 		}
+		delete(e.userToTicket, ticket.UserID)
+		delete(e.ticketToMode, oldTid)
 	}
 
-	e.inMemoryQueue[ticket.TicketID] = ticket
-
-	if e.useRedis && e.redisClient != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		defer cancel()
-		data, _ := json.Marshal(ticket)
-		queueKey := fmt.Sprintf("queue:%s", ticket.Mode)
-		e.redisClient.ZAdd(ctx, queueKey, redis.Z{
-			Score:  float64(ticket.QueuedAt),
-			Member: ticket.TicketID,
-		})
-		e.redisClient.Set(ctx, fmt.Sprintf("ticket:%s", ticket.TicketID), data, 10*time.Minute)
+	if e.modeQueues[ticket.Mode] == nil {
+		e.modeQueues[ticket.Mode] = make(map[string]*MatchTicket)
 	}
+
+	e.modeQueues[ticket.Mode][ticket.TicketID] = ticket
+	e.userToTicket[ticket.UserID] = ticket.TicketID
+	e.ticketToMode[ticket.TicketID] = ticket.Mode
 
 	return nil
 }
 
-// LeaveQueue cancels matchmaking immediately
+// LeaveQueue cancels matchmaking immediately in O(1) time
 func (e *MatchmakingEngine) LeaveQueue(userID string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	for tid, t := range e.inMemoryQueue {
-		if t.UserID == userID {
-			delete(e.inMemoryQueue, tid)
-			if e.useRedis && e.redisClient != nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-				e.redisClient.ZRem(ctx, fmt.Sprintf("queue:%s", t.Mode), tid)
-				e.redisClient.Del(ctx, fmt.Sprintf("ticket:%s", tid))
-				cancel()
+	if tid, exists := e.userToTicket[userID]; exists {
+		if mode, modeExists := e.ticketToMode[tid]; modeExists {
+			if q, ok := e.modeQueues[mode]; ok {
+				delete(q, tid)
 			}
-			break
 		}
+		delete(e.userToTicket, userID)
+		delete(e.ticketToMode, tid)
 	}
 }
 
@@ -193,26 +226,40 @@ func (e *MatchmakingEngine) matchLoop() {
 	}
 }
 
-func (e *MatchmakingEngine) runMatchTick() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+type matchCandidatePair struct {
+	ticketA         *MatchTicket
+	ticketB         *MatchTicket
+	score           float64
+	sharedInterests []string
+}
 
+func (e *MatchmakingEngine) runMatchTick() {
 	modes := []MatchMode{ModeVoice, ModeText, ModeMystery}
 
+	// 1. Snapshot candidate slices under RLock (O(1) read lock)
+	e.mu.RLock()
+	modeCandidates := make(map[MatchMode][]*MatchTicket)
 	for _, mode := range modes {
-		// Collect tickets for this mode
-		var candidates []*MatchTicket
-		for _, ticket := range e.inMemoryQueue {
-			if ticket.Mode == mode {
-				candidates = append(candidates, ticket)
+		q := e.modeQueues[mode]
+		if len(q) >= 2 {
+			list := make([]*MatchTicket, 0, len(q))
+			for _, t := range q {
+				list = append(list, t)
 			}
+			modeCandidates[mode] = list
+		}
+	}
+	e.mu.RUnlock()
+
+	// 2. Score candidates OUTSIDE the write lock (CPU-intensive matching is non-blocking)
+	var matchedPairs []*matchCandidatePair
+
+	for _, candidates := range modeCandidates {
+		// Cap batch size per tick to guarantee sub-millisecond tick execution under massive concurrency
+		if len(candidates) > 400 {
+			candidates = candidates[:400]
 		}
 
-		if len(candidates) < 2 {
-			continue
-		}
-
-		// Perform greedy pairing with multi-dimensional score matrix
 		matchedIDs := make(map[string]bool)
 
 		for i := 0; i < len(candidates); i++ {
@@ -223,6 +270,7 @@ func (e *MatchmakingEngine) runMatchTick() {
 
 			bestScore := -1000.0
 			bestIdx := -1
+			var bestShared []string
 
 			for j := 0; j < len(candidates); j++ {
 				if i == j {
@@ -234,11 +282,10 @@ func (e *MatchmakingEngine) runMatchTick() {
 				}
 
 				score, shared := e.calculateMatchScore(tA, tB)
-				// Any compatible non-blocked user can match immediately; pick the best available partner
 				if score > -500 && score > bestScore {
 					bestScore = score
 					bestIdx = j
-					_ = shared
+					bestShared = shared
 				}
 			}
 
@@ -247,42 +294,79 @@ func (e *MatchmakingEngine) runMatchTick() {
 				matchedIDs[tA.TicketID] = true
 				matchedIDs[tB.TicketID] = true
 
-				delete(e.inMemoryQueue, tA.TicketID)
-				delete(e.inMemoryQueue, tB.TicketID)
-
-				_, shared := e.calculateMatchScore(tA, tB)
-				roomName := fmt.Sprintf("aura_room_%s", uuid.New().String()[:12])
-				matchID := uuid.New().String()
-
-				pair := &MatchedPair{
-					MatchID:         matchID,
-					RoomName:        roomName,
-					TicketA:         tA,
-					TicketB:         tB,
-					Score:           bestScore,
-					SharedInterests: shared,
-					MatchedAt:       time.Now().UTC(),
-				}
-
-				// Record recent match
-				if e.recentMatches[tA.UserID] == nil {
-					e.recentMatches[tA.UserID] = make(map[string]time.Time)
-				}
-				if e.recentMatches[tB.UserID] == nil {
-					e.recentMatches[tB.UserID] = make(map[string]time.Time)
-				}
-				e.recentMatches[tA.UserID][tB.UserID] = time.Now().UTC()
-				e.recentMatches[tB.UserID][tA.UserID] = time.Now().UTC()
-
-				if e.matchCallback != nil {
-					go e.matchCallback(pair)
-				}
+				matchedPairs = append(matchedPairs, &matchCandidatePair{
+					ticketA:         tA,
+					ticketB:         tB,
+					score:           bestScore,
+					sharedInterests: bestShared,
+				})
 			}
+		}
+	}
+
+	if len(matchedPairs) == 0 {
+		return
+	}
+
+	// 3. Commit matched pairs under write Lock (atomic removal & callback dispatch)
+	e.mu.Lock()
+	var verifiedPairs []*MatchedPair
+
+	for _, p := range matchedPairs {
+		tA := p.ticketA
+		tB := p.ticketB
+
+		// Verify tickets are still present in queue
+		qA := e.modeQueues[tA.Mode]
+		qB := e.modeQueues[tB.Mode]
+		if qA == nil || qB == nil || qA[tA.TicketID] == nil || qB[tB.TicketID] == nil {
+			continue
+		}
+
+		// Evict both matched tickets
+		delete(qA, tA.TicketID)
+		delete(qB, tB.TicketID)
+		delete(e.userToTicket, tA.UserID)
+		delete(e.userToTicket, tB.UserID)
+		delete(e.ticketToMode, tA.TicketID)
+		delete(e.ticketToMode, tB.TicketID)
+
+		roomName := fmt.Sprintf("aura_room_%s", uuid.New().String()[:12])
+		matchID := uuid.New().String()
+
+		pair := &MatchedPair{
+			MatchID:         matchID,
+			RoomName:        roomName,
+			TicketA:         tA,
+			TicketB:         tB,
+			Score:           p.score,
+			SharedInterests: p.sharedInterests,
+			MatchedAt:       time.Now().UTC(),
+		}
+
+		// Record recent match
+		if e.recentMatches[tA.UserID] == nil {
+			e.recentMatches[tA.UserID] = make(map[string]time.Time)
+		}
+		if e.recentMatches[tB.UserID] == nil {
+			e.recentMatches[tB.UserID] = make(map[string]time.Time)
+		}
+		e.recentMatches[tA.UserID][tB.UserID] = time.Now().UTC()
+		e.recentMatches[tB.UserID][tA.UserID] = time.Now().UTC()
+
+		verifiedPairs = append(verifiedPairs, pair)
+	}
+	e.mu.Unlock()
+
+	// 4. Fire callbacks asynchronously outside lock
+	if e.matchCallback != nil {
+		for _, pair := range verifiedPairs {
+			go e.matchCallback(pair)
 		}
 	}
 }
 
-// calculateMatchScore evaluates compatibility based on the prompt's mathematical specification
+// calculateMatchScore evaluates compatibility based on mathematical specification
 func (e *MatchmakingEngine) calculateMatchScore(a, b *MatchTicket) (float64, []string) {
 	// Hard constraint 1: Same user cannot match with themselves
 	if a.UserID == b.UserID {
@@ -290,10 +374,13 @@ func (e *MatchmakingEngine) calculateMatchScore(a, b *MatchTicket) (float64, []s
 	}
 
 	// Hard constraint 2: Block list
-	if e.userBlocks[a.UserID] != nil && e.userBlocks[a.UserID][b.UserID] {
-		return -9999.0, nil
-	}
-	if e.userBlocks[b.UserID] != nil && e.userBlocks[b.UserID][a.UserID] {
+	e.mu.RLock()
+	isBlocked := (e.userBlocks[a.UserID] != nil && e.userBlocks[a.UserID][b.UserID]) ||
+		(e.userBlocks[b.UserID] != nil && e.userBlocks[b.UserID][a.UserID])
+	recentA := e.recentMatches[a.UserID]
+	e.mu.RUnlock()
+
+	if isBlocked {
 		return -9999.0, nil
 	}
 
@@ -304,7 +391,6 @@ func (e *MatchmakingEngine) calculateMatchScore(a, b *MatchTicket) (float64, []s
 	if strings.EqualFold(a.Preferences.NativeLanguage, b.Preferences.NativeLanguage) {
 		langCompat = 30.0
 	} else {
-		// Check target languages / practice overlap
 		for _, targetA := range a.Preferences.TargetLanguages {
 			if strings.EqualFold(targetA, b.Preferences.NativeLanguage) {
 				langCompat = math.Max(langCompat, 25.0)
@@ -349,7 +435,6 @@ func (e *MatchmakingEngine) calculateMatchScore(a, b *MatchTicket) (float64, []s
 	if a.Preferences.Mood != "" && a.Preferences.Mood == b.Preferences.Mood {
 		score += 15.0
 	} else {
-		// Harmonic mood pairs (e.g. Chill <-> Deep, Curious <-> Talkative)
 		moodA, moodB := a.Preferences.Mood, b.Preferences.Mood
 		if (moodA == "chill" && moodB == "deep") || (moodA == "deep" && moodB == "chill") ||
 			(moodA == "curious" && moodB == "talkative") || (moodA == "talkative" && moodB == "curious") {
@@ -364,8 +449,8 @@ func (e *MatchmakingEngine) calculateMatchScore(a, b *MatchTicket) (float64, []s
 	score += (avgTrust / 100.0) * 10.0
 
 	// 6. Recent Match Penalty (-50 pts if matched within last 30 minutes)
-	if e.recentMatches[a.UserID] != nil {
-		if matchedAt, exists := e.recentMatches[a.UserID][b.UserID]; exists {
+	if recentA != nil {
+		if matchedAt, exists := recentA[b.UserID]; exists {
 			if time.Since(matchedAt) < 30*time.Minute {
 				score -= 50.0
 			}
@@ -387,7 +472,11 @@ func (e *MatchmakingEngine) calculateMatchScore(a, b *MatchTicket) (float64, []s
 func (e *MatchmakingEngine) GetQueueCount() int {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return len(e.inMemoryQueue)
+	total := 0
+	for _, q := range e.modeQueues {
+		total += len(q)
+	}
+	return total
 }
 
 func (e *MatchmakingEngine) GetActiveMatchesCount() int {

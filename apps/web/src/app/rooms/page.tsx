@@ -206,6 +206,14 @@ export default function RoomsPage() {
     try {
       const stageData = await fetchRoomToken(activeToken, room.id);
       setActiveStage({ room, token: stageData.livekitToken || 'live', roomName: stageData.roomName || roomName });
+      webrtcEngine.startCall({
+        livekitToken: stageData.livekitToken,
+        livekitUrl: stageData.livekitUrl,
+        roomName: stageData.roomName || roomName,
+        onSpeakingChange: (speaking) => setIsSelfSpeaking(speaking),
+        onPeerSpeakingChange: (speaking) => setIsPeerSpeaking(speaking),
+        onError: (err) => console.warn('[Lounge] Audio error:', err),
+      });
     } catch (err) {
       console.warn('Failed to fetch stage livekit token, using realtime fallback', err);
     }

@@ -3,8 +3,6 @@ package realtime
 import (
 	"encoding/json"
 	"log"
-	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -18,22 +16,6 @@ const (
 	maxMessageSize = 64 * 1024 // 64 KB strict maximum payload to prevent buffer attacks
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  2048,
-	WriteBufferSize: 2048,
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true
-		}
-		// Allow localhost and any origin in dev, or validate whitelist in production
-		if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") {
-			return true
-		}
-		return true
-	},
-}
-
 type Client struct {
 	Hub          *Hub
 	Conn         *websocket.Conn
@@ -44,7 +26,7 @@ type Client struct {
 	ActiveRoom   string
 	MysteryLevel int // 1: anonymous, 2: shared interests, 3: full profile
 	mu           sync.Mutex
-	closeOnce    sync.Once
+	isClosed     bool
 
 	// Inbound message flood protection
 	msgCount    int
@@ -52,9 +34,12 @@ type Client struct {
 }
 
 func (c *Client) CloseSend() {
-	c.closeOnce.Do(func() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.isClosed {
+		c.isClosed = true
 		close(c.Send)
-	})
+	}
 }
 
 type WSMessage struct {
@@ -161,6 +146,10 @@ func (c *Client) SendJSON(msgType string, payload interface{}) {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.isClosed {
+		return
+	}
 
 	select {
 	case c.Send <- msgBytes:

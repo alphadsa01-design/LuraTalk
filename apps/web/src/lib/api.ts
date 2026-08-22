@@ -27,7 +27,7 @@ export interface UserPreferencesPayload {
 
 export async function getOrCreateAnonymousSession(deviceFingerprint?: string, retries = 3): Promise<{ token: string; user: any }> {
   if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('auravoice_token');
+    const token = localStorage.getItem('luratalk_token') || localStorage.getItem('auravoice_token');
     // Try to load cached user from Zustand storage for 0ms instant startup
     const rawStorage = localStorage.getItem('luratalk_user_storage');
     let cachedUser: any = null;
@@ -46,6 +46,7 @@ export async function getOrCreateAnonymousSession(deviceFingerprint?: string, re
         headers: { Authorization: `Bearer ${token}` },
       }).then(async (res) => {
         if (!res.ok && res.status === 401) {
+          localStorage.removeItem('luratalk_token');
           localStorage.removeItem('auravoice_token');
         }
       }).catch(() => {});
@@ -86,8 +87,8 @@ export async function getOrCreateAnonymousSession(deviceFingerprint?: string, re
 
       const data = await res.json();
       if (typeof window !== 'undefined') {
-        localStorage.setItem('auravoice_token', data.token);
-        localStorage.setItem('auravoice_user_id', data.user.id);
+        localStorage.setItem('luratalk_token', data.token);
+        localStorage.setItem('luratalk_user_id', data.user.id);
       }
       return data;
     } catch (err) {
@@ -161,6 +162,22 @@ export async function addFriend(token: string, username: string) {
   if (!res.ok) {
     const data = await res.text();
     throw new Error(data || 'Failed to add friend');
+  }
+  return res.json();
+}
+
+export async function acceptFriendRequest(token: string, friendId: string) {
+  const res = await fetch(`${API_BASE}/api/v1/friends/accept`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ friendId }),
+  });
+  if (!res.ok) {
+    const data = await res.text();
+    throw new Error(data || 'Failed to accept friend request');
   }
   return res.json();
 }

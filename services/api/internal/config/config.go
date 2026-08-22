@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -59,17 +60,41 @@ func LoadConfig() *Config {
 	port := getEnv("PORT", "8080")
 	dbURL := getEnv("DATABASE_URL", "auravoice.db") // SQLite embedded default
 	redisURL := getEnv("REDIS_URL", "redis://localhost:6379/0")
+	env := getEnv("ENV", "development")
+
 	jwtSecret := getEnv("JWT_SECRET", "aura_voice_super_secure_jwt_secret_key_2026")
 	lkHost := getEnv("LIVEKIT_HOST", "http://localhost:7880")
 	lkAPIKey := getEnv("LIVEKIT_API_KEY", "devkey")
 	lkAPISecret := getEnv("LIVEKIT_API_SECRET", "secret_livekit_key_aura_voice_dev")
 	corsOrigins := getEnv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
-	env := getEnv("ENV", "development")
 	adminKey := getEnv("ADMIN_API_KEY", "aura_admin_master_secret_key_2026")
 	stunURL := getEnv("STUN_SERVER_URL", "stun:stun.l.google.com:19302")
 	webhookSecret := getEnv("PAYMENT_WEBHOOK_SECRET", "whsec_aura_payment_secret_2026")
 	maxUpload := int64(getEnvAsInt("UPLOAD_MAX_BYTES", 2097152))
 	rateLimit := getEnvAsInt("RATE_LIMIT_PER_MIN", 120)
+
+	// In production, fatal exit if critical security secrets are missing or using dev defaults
+	if strings.ToLower(env) == "production" {
+		criticalSecrets := map[string]string{
+			"JWT_SECRET":             os.Getenv("JWT_SECRET"),
+			"ADMIN_API_KEY":          os.Getenv("ADMIN_API_KEY"),
+			"LIVEKIT_API_SECRET":     os.Getenv("LIVEKIT_API_SECRET"),
+			"PAYMENT_WEBHOOK_SECRET": os.Getenv("PAYMENT_WEBHOOK_SECRET"),
+		}
+
+		devDefaults := map[string]string{
+			"JWT_SECRET":             "aura_voice_super_secure_jwt_secret_key_2026",
+			"ADMIN_API_KEY":          "aura_admin_master_secret_key_2026",
+			"LIVEKIT_API_SECRET":     "secret_livekit_key_aura_voice_dev",
+			"PAYMENT_WEBHOOK_SECRET": "whsec_aura_payment_secret_2026",
+		}
+
+		for key, val := range criticalSecrets {
+			if strings.TrimSpace(val) == "" || val == devDefaults[key] {
+				log.Fatalf("FATAL CONFIG ERROR: In production environment, %s must be explicitly set to a strong, non-default secret in your environment/secret manager.", key)
+			}
+		}
+	}
 
 	return &Config{
 		Port:                 port,
@@ -87,6 +112,34 @@ func LoadConfig() *Config {
 		UploadMaxBytes:       maxUpload,
 		RateLimitPerMin:      rateLimit,
 	}
+}
+
+func (c *Config) GetParsedAllowedOrigins() []string {
+	if c.CORSAllowedOrigins == "" {
+		return []string{"http://localhost:3000", "http://127.0.0.1:3000"}
+	}
+	parts := strings.Split(c.CORSAllowedOrigins, ",")
+	origins := make([]string, 0, len(parts))
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			origins = append(origins, trimmed)
+		}
+	}
+	return origins
+}
+
+func (c *Config) IsOriginAllowed(origin string) bool {
+	if origin == "" {
+		return true // Non-browser/server-to-server requests
+	}
+	allowed := c.GetParsedAllowedOrigins()
+	for _, a := range allowed {
+		if a == "*" || a == origin {
+			return true
+		}
+	}
+	return false
 }
 
 func getEnv(key, fallback string) string {

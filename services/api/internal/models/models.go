@@ -39,7 +39,7 @@ func (a *StringArray) Scan(value interface{}) error {
 type User struct {
 	ID              uuid.UUID   `gorm:"type:uuid;primary_key;" json:"id"`
 	IsAnonymous     bool        `gorm:"default:true" json:"isAnonymous"`
-	Username        string      `gorm:"size:64;not null" json:"username"`
+	Username        string      `gorm:"size:64;uniqueIndex;not null" json:"username"`
 	Email           *string     `gorm:"size:255;uniqueIndex" json:"email,omitempty"`
 	AvatarID        string      `gorm:"size:50;default:'aura_1'" json:"avatarId"`
 	Bio             string      `gorm:"type:text" json:"bio,omitempty"`
@@ -54,6 +54,39 @@ type User struct {
 	OneQuestionAns  string      `gorm:"type:text" json:"oneQuestionAnswer,omitempty"`
 	CreatedAt       time.Time   `json:"createdAt"`
 	UpdatedAt       time.Time   `json:"updatedAt"`
+}
+
+type UserPublic struct {
+	ID              uuid.UUID   `json:"id"`
+	Username        string      `json:"username"`
+	AvatarID        string      `json:"avatarId"`
+	Bio             string      `json:"bio,omitempty"`
+	CountryCode     string      `json:"countryCode,omitempty"`
+	NativeLanguage  string      `json:"nativeLanguage"`
+	TargetLanguages StringArray `json:"targetLanguages"`
+	Interests       StringArray `json:"interests"`
+	Mood            string      `json:"mood"`
+	Intention       string      `json:"intention"`
+	CreatedAt       time.Time   `json:"createdAt"`
+}
+
+func (u *User) ToPublic() UserPublic {
+	if u == nil {
+		return UserPublic{}
+	}
+	return UserPublic{
+		ID:              u.ID,
+		Username:        u.Username,
+		AvatarID:        u.AvatarID,
+		Bio:             u.Bio,
+		CountryCode:     u.CountryCode,
+		NativeLanguage:  u.NativeLanguage,
+		TargetLanguages: u.TargetLanguages,
+		Interests:       u.Interests,
+		Mood:            u.Mood,
+		Intention:       u.Intention,
+		CreatedAt:       u.CreatedAt,
+	}
 }
 
 func (u *User) BeforeCreate(tx *gorm.DB) error {

@@ -116,17 +116,36 @@ func (lim *IPRateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+func isTrustedProxy(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+}
+
 func extractIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	directHost, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		directHost = strings.TrimSpace(r.RemoteAddr)
 	}
-	return host
+
+	// Only trust forwarding headers if the direct connecting peer is a trusted local/private proxy
+	if isTrustedProxy(directHost) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			clientIP := strings.TrimSpace(parts[0])
+			if clientIP != "" {
+				return clientIP
+			}
+		}
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			clientIP := strings.TrimSpace(xri)
+			if clientIP != "" {
+				return clientIP
+			}
+		}
+	}
+
+	return directHost
 }

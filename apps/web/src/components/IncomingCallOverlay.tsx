@@ -67,6 +67,9 @@ export default function IncomingCallOverlay() {
         useCallStore.getState().setMatchFound(payload);
         webrtcEngine.startCall({
           isInitiator: payload.isInitiator,
+          livekitToken: payload.livekitToken,
+          livekitUrl: payload.livekitUrl,
+          roomName: payload.roomName,
           onSpeakingChange: (spk) => useCallStore.getState().setSpeaking(spk),
           onPeerSpeakingChange: (peerSpk) => useCallStore.getState().setPeerSpeaking(peerSpk),
         });

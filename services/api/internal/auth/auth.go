@@ -138,11 +138,8 @@ func ExtractTokenFromRequest(r *http.Request) string {
 	if authHeader != "" {
 		parts := strings.Split(authHeader, " ")
 		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
-			return parts[1]
+			return strings.TrimSpace(parts[1])
 		}
-	}
-	if queryToken := r.URL.Query().Get("token"); queryToken != "" {
-		return queryToken
 	}
 	return ""
 }

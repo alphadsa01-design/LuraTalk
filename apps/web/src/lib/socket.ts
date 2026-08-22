@@ -33,10 +33,8 @@ class AuraSocketClient {
       }
     }
 
-    const urlWithToken = `${wsUrl}?token=${encodeURIComponent(token)}`;
-
     try {
-      this.ws = new WebSocket(urlWithToken);
+      this.ws = new WebSocket(wsUrl, ['aura-auth', token]);
 
       this.ws.onopen = () => {
         this.isConnecting = false;

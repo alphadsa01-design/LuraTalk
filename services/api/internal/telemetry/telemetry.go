@@ -74,9 +74,14 @@ func NewSecurityMonitor() *SecurityMonitor {
 }
 
 // RecordEvent logs an occurrence and evaluates if a security anomaly spike is active
-func (sm *SecurityMonitor) RecordEvent(eventType EventType, metadata string) {
+func (sm *SecurityMonitor) RecordEvent(eventType EventType, metadata ...string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+
+	msg := ""
+	if len(metadata) > 0 {
+		msg = metadata[0]
+	}
 
 	now := time.Now()
 	sm.eventWindows[eventType] = append(sm.eventWindows[eventType], now)
@@ -101,7 +106,7 @@ func (sm *SecurityMonitor) RecordEvent(eventType EventType, metadata string) {
 			RateCount: count,
 			Threshold: threshold,
 			Severity:  "CRITICAL",
-			Message:   metadata,
+			Message:   msg,
 		}
 		sm.alertHistory = append(sm.alertHistory, alert)
 		if len(sm.alertHistory) > 100 {

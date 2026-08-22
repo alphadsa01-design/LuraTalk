@@ -3,10 +3,12 @@ package moderation
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"airtak/services/api/internal/database"
 	"airtak/services/api/internal/models"
+	"airtak/services/api/internal/telemetry"
 
 	"github.com/google/uuid"
 )
@@ -18,10 +20,10 @@ func NewModerationService() *ModerationService {
 }
 
 // CreateReport records a user report with report bombing & false report throttling
-func (s *ModerationService) CreateReport(reporterID, reportedID uuid.UUID, conversationID *uuid.UUID, reason, description string) (*models.Report, error) {
+func (s *ModerationService) CreateReport(reporterID, reportedID uuid.UUID, conversationID *uuid.UUID, reason, description string) (*models.Report, bool, error) {
 	// 1. Prohibit self-reporting
 	if reporterID == reportedID {
-		return nil, errors.New("cannot report your own account")
+		return nil, false, errors.New("cannot report your own account")
 	}
 
 	// 2. Report bombing defense: check if an identical open report was submitted in the last 1 hour
@@ -29,8 +31,8 @@ func (s *ModerationService) CreateReport(reporterID, reportedID uuid.UUID, conve
 	oneHourAgo := time.Now().UTC().Add(-1 * time.Hour)
 	err := database.DB.Where("reporter_id = ? AND reported_id = ? AND status = 'open' AND created_at > ?", reporterID, reportedID, oneHourAgo).First(&existing).Error
 	if err == nil {
-		// Report already received and queued for review
-		return &existing, nil
+		// Report already received and queued for review (not a newly created row)
+		return &existing, false, nil
 	}
 
 	// 3. Input length bounds
@@ -53,10 +55,10 @@ func (s *ModerationService) CreateReport(reporterID, reportedID uuid.UUID, conve
 	}
 
 	if err := database.DB.Create(&report).Error; err != nil {
-		return nil, fmt.Errorf("failed to save report: %w", err)
+		return nil, false, fmt.Errorf("failed to save report: %w", err)
 	}
 
-	return &report, nil
+	return &report, true, nil
 }
 
 // BlockUser creates a permanent isolation barrier between two users
@@ -98,8 +100,22 @@ func (s *ModerationService) GetOpenReports() ([]models.Report, error) {
 	return reports, err
 }
 
+var validReportActions = map[string]bool{
+	"resolved":     true,
+	"dismissed":    true,
+	"warned":       true,
+	"banned":       true,
+	"action_taken": true,
+	"rejected":     true,
+}
+
 // ActionReport updates report status with audit trail and executes trust/ban penalties
 func (s *ModerationService) ActionReport(reportID uuid.UUID, action string) error {
+	action = strings.ToLower(strings.TrimSpace(action))
+	if !validReportActions[action] {
+		return fmt.Errorf("invalid action '%s': allowed actions are resolved, dismissed, warned, banned, action_taken, rejected", action)
+	}
+
 	var report models.Report
 	if err := database.DB.First(&report, "id = ?", reportID).Error; err != nil {
 		return err
@@ -116,6 +132,7 @@ func (s *ModerationService) ActionReport(reportID uuid.UUID, action string) erro
 			user.IsBanned = true
 			user.TrustScore = 0
 			database.DB.Save(&user)
+			telemetry.Monitor.RecordEvent(telemetry.EventAccountBan)
 		}
 	} else if action == "warned" {
 		var user models.User

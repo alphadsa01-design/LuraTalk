@@ -16,6 +16,7 @@ import (
 
 	"airtak/services/api/internal/auth"
 	"airtak/services/api/internal/config"
+	"airtak/services/api/internal/telemetry"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -40,11 +41,37 @@ func NewUploadService(cfg *config.Config) *UploadService {
 	// Create upload storage directory if not exists
 	os.MkdirAll(UploadDirStorage, 0755)
 
-	return &UploadService{
+	svc := &UploadService{
 		cfg:        cfg,
 		storageDir: UploadDirStorage,
 		rateLimits: make(map[string][]time.Time),
 	}
+
+	// Periodic rate limits sweeper
+	go func() {
+		ticker := time.NewTicker(3 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			svc.mu.Lock()
+			cutoff := time.Now().Add(-5 * time.Minute)
+			for uID, timestamps := range svc.rateLimits {
+				var valid []time.Time
+				for _, t := range timestamps {
+					if t.After(cutoff) {
+						valid = append(valid, t)
+					}
+				}
+				if len(valid) == 0 {
+					delete(svc.rateLimits, uID)
+				} else {
+					svc.rateLimits[uID] = valid
+				}
+			}
+			svc.mu.Unlock()
+		}
+	}()
+
+	return svc
 }
 
 func (s *UploadService) checkRateLimit(userID string) bool {
@@ -156,6 +183,8 @@ func (s *UploadService) UploadImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save media", http.StatusInternalServerError)
 		return
 	}
+
+	telemetry.Monitor.RecordEvent(telemetry.EventMediaUpload)
 
 	mediaURL := fmt.Sprintf("/api/v1/media/%s", safeFilename)
 

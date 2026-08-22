@@ -17,11 +17,12 @@ import (
 	"airtak/services/api/internal/handlers"
 	"airtak/services/api/internal/livekit"
 	"airtak/services/api/internal/matchmaking"
+	apimw "airtak/services/api/internal/middleware"
+	"airtak/services/api/internal/models"
 	"airtak/services/api/internal/moderation"
 	"airtak/services/api/internal/realtime"
 	"airtak/services/api/internal/trust"
 	"airtak/services/api/internal/upload"
-	apimw "airtak/services/api/internal/middleware"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -59,6 +60,12 @@ func main() {
 	})
 	defer matchEngine.Stop()
 
+	// Hydrate persistent database blocks into memory on server boot
+	var initialBlocks []models.Block
+	if err := database.DB.Find(&initialBlocks).Error; err == nil {
+		matchEngine.HydrateBlocks(initialBlocks)
+	}
+
 	// Initialize WebSocket Hub
 	hub = realtime.NewHub(cfg, matchEngine, livekitGen, aiEngine, gameManager, trustEngine, modService)
 	go hub.Run()
@@ -77,16 +84,13 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 
-	// CORS Allowlist Defense (Executed before security headers)
+	// CORS Allowlist Defense (Strictly locked to configured origins)
 	corsOpts := cors.Options{
-		AllowedOrigins: []string{"*"},
-		AllowOriginFunc: func(r *http.Request, origin string) bool {
-			return true // Support Vercel deployments, custom domains, and local testing
-		},
+		AllowedOrigins:   cfg.GetParsedAllowedOrigins(),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Admin-Key", "Origin"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
+		AllowCredentials: false,
 		MaxAge:           300,
 	}
 
@@ -115,49 +119,51 @@ func main() {
 
 	// Define API v1 Handlers
 	registerAPIRoutes := func(api chi.Router) {
-		// Auth
+		// Public routes
 		api.Post("/auth/anonymous", h.CreateAnonymousSession)
-		api.Post("/auth/upgrade", h.UpgradeAccount)
-
-		// Users & Preferences
-		api.Get("/users/me", h.GetMe)
-		api.Put("/users/me/preferences", h.UpdatePreferences)
-
-		// Live Online Stats
 		api.Get("/stats/online", h.GetPublicStats)
-
-		// Topic Lounges / Rooms
 		api.Get("/rooms", h.GetRooms)
-		api.Post("/rooms", h.CreateRoom)
-		api.Get("/rooms/{id}/token", h.GetRoomToken)
-
-		// Persistent Friendships & Memories
-		api.Get("/friends", h.GetFriends)
-		api.Post("/friends/add", h.AddFriend)
-		api.Delete("/friends/{id}", h.RemoveFriend)
-		api.Get("/memories", h.GetMemories)
-		api.Post("/memories", h.SaveMemory)
-		api.Delete("/memories/{id}", h.DeleteMemory)
-
-		// Call History & Re-connect
-		api.Get("/history", h.GetHistory)
-		api.Delete("/history/{id}", h.DeleteHistory)
-
-		// Secure File & Image Uploads
-		api.Post("/upload", uploadService.UploadImage)
 		api.Get("/media/{id}", uploadService.ServeMedia)
 
-		// Safety, Reporting & Bilateral Blocking
-		api.Post("/report", h.CreateReport)
-		api.Post("/block", h.BlockUser)
+		// Protected User Routes (AuthMiddleware)
+		api.Group(func(protected chi.Router) {
+			protected.Use(apimw.AuthMiddleware(cfg))
 
-		// Admin & Moderation Dashboard
-		api.Get("/admin/stats", h.GetAdminStats)
-		api.Get("/admin/reports", h.GetAdminReports)
-		api.Post("/admin/reports/{id}/action", h.ActionAdminReport)
-		api.Post("/admin/rooms", h.AdminCreateRoom)
-		api.Delete("/admin/rooms/{id}", h.AdminDeleteRoom)
-		api.Post("/admin/users/{id}/revoke", h.AdminRevokeUser)
+			protected.Post("/auth/upgrade", h.UpgradeAccount)
+			protected.Get("/users/me", h.GetMe)
+			protected.Put("/users/me/preferences", h.UpdatePreferences)
+
+			protected.Post("/rooms", h.CreateRoom)
+			protected.Get("/rooms/{id}/token", h.GetRoomToken)
+
+			protected.Get("/friends", h.GetFriends)
+			protected.Post("/friends/add", h.AddFriend)
+			protected.Post("/friends/accept", h.AcceptFriendRequest)
+			protected.Delete("/friends/{id}", h.RemoveFriend)
+
+			protected.Get("/memories", h.GetMemories)
+			protected.Post("/memories", h.SaveMemory)
+			protected.Delete("/memories/{id}", h.DeleteMemory)
+
+			protected.Get("/history", h.GetHistory)
+			protected.Delete("/history/{id}", h.DeleteHistory)
+
+			protected.Post("/upload", uploadService.UploadImage)
+			protected.Post("/report", h.CreateReport)
+			protected.Post("/block", h.BlockUser)
+		})
+
+		// Admin & Moderation Routes (AdminAuthMiddleware)
+		api.Group(func(admin chi.Router) {
+			admin.Use(apimw.AdminAuthMiddleware(cfg))
+
+			admin.Get("/admin/stats", h.GetAdminStats)
+			admin.Get("/admin/reports", h.GetAdminReports)
+			admin.Post("/admin/reports/{id}/action", h.ActionAdminReport)
+			admin.Post("/admin/rooms", h.AdminCreateRoom)
+			admin.Delete("/admin/rooms/{id}", h.AdminDeleteRoom)
+			admin.Post("/admin/users/{id}/revoke", h.AdminRevokeUser)
+		})
 	}
 
 	// Mount REST API routes at both /api/v1 and /api/api/v1 (for multi-service proxies)

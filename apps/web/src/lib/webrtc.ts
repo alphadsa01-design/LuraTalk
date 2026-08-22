@@ -1,9 +1,13 @@
-// LuraTalk Real-Time WebRTC Voice & Audio Engine (Ultra-Low Latency + Race-Proof)
+// LuraTalk Real-Time Audio Engine: LiveKit SFU (Primary) + TURN WebRTC (Fallback)
 
 import { socketClient } from '@/lib/socket';
+import { Room, RoomEvent, RemoteTrack, Track, RemoteParticipant, LocalAudioTrack } from 'livekit-client';
 
 export interface WebRTCVoiceOptions {
-  isInitiator: boolean;
+  isInitiator?: boolean;
+  livekitToken?: string;
+  livekitUrl?: string;
+  roomName?: string;
   onSpeakingChange?: (isSpeaking: boolean) => void;
   onPeerSpeakingChange?: (isPeerSpeaking: boolean) => void;
   onDisconnected?: () => void;
@@ -11,12 +15,18 @@ export interface WebRTCVoiceOptions {
 }
 
 class LuraWebRTCEngine {
+  // LiveKit SFU State
+  private livekitRoom: Room | null = null;
+  private isUsingLiveKit: boolean = false;
+
+  // P2P WebRTC Fallback State
   private pc: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
   private remoteAudio: HTMLAudioElement | null = null;
   private unsubSignal: (() => void) | null = null;
 
+  // Audio Context & Analysis
   private audioCtx: AudioContext | null = null;
   private localAnalyser: AnalyserNode | null = null;
   private remoteAnalyser: AnalyserNode | null = null;
@@ -35,7 +45,6 @@ class LuraWebRTCEngine {
 
   constructor() {
     if (typeof window !== 'undefined') {
-      // Pre-bind unlock listeners for mobile / Chrome autoplay policies
       const unlockAudio = () => {
         if (this.audioCtx && this.audioCtx.state === 'suspended') {
           this.audioCtx.resume().catch(() => {});
@@ -75,9 +84,6 @@ class LuraWebRTCEngine {
     return this.remoteAudio;
   }
 
-  /**
-   * Pre-warms microphone access so connecting to a match is instant (<100ms)
-   */
   public async warmupMicrophone(): Promise<MediaStream | null> {
     if (this.localStream && this.localStream.active) {
       return this.localStream;
@@ -108,18 +114,74 @@ class LuraWebRTCEngine {
     this.onSpeakingChange = options.onSpeakingChange;
     this.onPeerSpeakingChange = options.onPeerSpeakingChange;
 
-    // 1. Prepare Audio Element & AudioContext immediately
     this.ensureRemoteAudioElement();
     this.getOrCreateAudioContext();
 
-    // 2. Register Signal Listener IMMEDIATELY before async getUserMedia
-    // This prevents dropping the peer's offer during microphone acquisition!
+    // Strategy 1: Attempt LiveKit SFU if Token & URL are configured
+    if (options.livekitToken && options.livekitUrl) {
+      try {
+        const success = await this.connectLiveKitSFU(options);
+        if (success) {
+          this.isUsingLiveKit = true;
+          return;
+        }
+      } catch (err) {
+        console.warn('[VoiceEngine] LiveKit SFU failed, falling back to TURN P2P WebRTC:', err);
+      }
+    }
+
+    // Strategy 2: Enterprise P2P WebRTC with STUN & TURN
+    await this.connectP2PWebRTC(options);
+  }
+
+  private async connectLiveKitSFU(options: WebRTCVoiceOptions): Promise<boolean> {
+    const room = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+      audioCaptureDefaults: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+
+    this.livekitRoom = room;
+
+    room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _, participant: RemoteParticipant) => {
+      if (track.kind === Track.Kind.Audio && this.remoteAudio) {
+        track.attach(this.remoteAudio);
+        if (this.remoteAudio.srcObject instanceof MediaStream) {
+          this.setupRemoteAudioAnalysis(this.remoteAudio.srcObject);
+        }
+      }
+    });
+
+    room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+      const isLocalSpeaking = speakers.some((s) => s.isLocal);
+      const isRemoteSpeaking = speakers.some((s) => !s.isLocal);
+
+      if (this.onSpeakingChange) this.onSpeakingChange(isLocalSpeaking);
+      if (this.onPeerSpeakingChange) this.onPeerSpeakingChange(isRemoteSpeaking);
+    });
+
+    room.on(RoomEvent.Disconnected, () => {
+      options.onDisconnected?.();
+    });
+
+    await room.connect(options.livekitUrl!, options.livekitToken!);
+    await room.localParticipant.setMicrophoneEnabled(!this.isMuted);
+
+    return true;
+  }
+
+  private async connectP2PWebRTC(options: WebRTCVoiceOptions) {
+    this.isUsingLiveKit = false;
+
     this.unsubSignal = socketClient.on('webrtc:signal', async (payload: any) => {
-      await this.handleIncomingSignal(payload, options.isInitiator);
+      await this.handleIncomingSignal(payload, !!options.isInitiator);
     });
 
     try {
-      // 3. Acquire Local Microphone (or use pre-warmed stream)
       if (!this.localStream || !this.localStream.active) {
         this.localStream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -132,20 +194,32 @@ class LuraWebRTCEngine {
         });
       }
 
-      // 4. Initialize RTCPeerConnection with low-latency STUN pool
+      // STUN + Enterprise TURN Relay Servers
       this.pc = new RTCPeerConnection({
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun.cloudflare.com:3478' },
           { urls: 'stun:global.stun.twilio.com:3478' },
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
         ],
         iceCandidatePoolSize: 8,
         bundlePolicy: 'max-bundle',
       });
 
-      // Add local audio track directly to RTCPeerConnection (automatically configures bidirectional transceiver)
       this.localStream.getAudioTracks().forEach((track) => {
         track.enabled = !this.isMuted;
         if (this.pc && this.localStream) {
@@ -153,9 +227,7 @@ class LuraWebRTCEngine {
         }
       });
 
-      // Handle incoming remote audio track
       this.pc.ontrack = (event) => {
-        console.log('[WebRTC] Received remote audio track:', event.track.id, 'Kind:', event.track.kind);
         const stream =
           event.streams && event.streams[0]
             ? event.streams[0]
@@ -163,15 +235,13 @@ class LuraWebRTCEngine {
 
         this.remoteStream = stream;
 
-        // Route 1: Direct High-Fidelity HTMLAudioElement (Primary audio pipeline)
         if (this.remoteAudio) {
           this.remoteAudio.srcObject = stream;
           this.remoteAudio.volume = 1.0;
           this.remoteAudio.muted = this.isDeafened;
           const playPromise = this.remoteAudio.play();
           if (playPromise !== undefined) {
-            playPromise.catch((err) => {
-              console.warn('[WebRTC] Autoplay prevented remote audio, awaiting user gesture:', err);
+            playPromise.catch(() => {
               const unlockAudio = () => {
                 this.remoteAudio?.play().catch(() => {});
                 document.removeEventListener('click', unlockAudio);
@@ -183,11 +253,9 @@ class LuraWebRTCEngine {
           }
         }
 
-        // Route 2: Visual Frequency & Speech Detection Analyser ONLY (Never piped to destination to prevent echo)
         this.setupRemoteAudioAnalysis(stream);
       };
 
-      // Handle local ICE candidates
       this.pc.onicecandidate = (event) => {
         if (event.candidate) {
           socketClient.send('webrtc:signal', {
@@ -199,34 +267,28 @@ class LuraWebRTCEngine {
 
       this.pc.oniceconnectionstatechange = () => {
         const state = this.pc?.iceConnectionState;
-        console.log('[WebRTC] ICE Connection State:', state);
         if (state === 'failed') {
-          console.warn('[WebRTC] ICE connection failed, restarting ICE');
           this.pc?.restartIce();
         } else if (state === 'connected' || state === 'completed') {
           this.resumeAudio();
         } else if (state === 'disconnected') {
-          console.log('[WebRTC] ICE state disconnected, peer likely left');
           options.onDisconnected?.();
         }
       };
 
       this.pc.onconnectionstatechange = () => {
         const state = this.pc?.connectionState;
-        console.log('[WebRTC] Connection State:', state);
         if (state === 'disconnected' || state === 'failed') {
           options.onDisconnected?.();
         }
       };
 
-      // 5. If we received an offer while microphone was initializing, process it now!
       if (this.pendingOffer) {
         const offerToProcess = this.pendingOffer;
         this.pendingOffer = null;
-        await this.handleIncomingSignal(offerToProcess, options.isInitiator);
+        await this.handleIncomingSignal(offerToProcess, !!options.isInitiator);
       }
 
-      // 6. If Initiator, create & broadcast Offer immediately
       if (options.isInitiator && this.pc.signalingState === 'stable') {
         const offer = await this.pc.createOffer({
           offerToReceiveAudio: true,
@@ -241,7 +303,6 @@ class LuraWebRTCEngine {
         });
       }
 
-      // 7. Setup Visualizers & Voice Activity Detection
       this.setupLocalAudioAnalysis(this.localStream);
       this.startAudioEnergyLoop();
     } catch (err: any) {
@@ -253,13 +314,10 @@ class LuraWebRTCEngine {
   }
 
   private optimizeOpusSdp(sdp: string): string {
-    // Locate Opus payload type in SDP (e.g. 111)
     const opusMatch = sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i);
     if (!opusMatch) return sdp;
     const pt = opusMatch[1];
-
     const fmtpRegex = new RegExp(`a=fmtp:${pt} (.*)`, 'g');
-    // Standard 20ms packetization prevents NetEQ jitter buffer time-stretching & robotic distortion
     const naturalVoiceFmtp = `a=fmtp:${pt} minptime=20;ptime=20;maxptime=40;useinbandfec=1;usedtx=1;stereo=0;sprop-stereo=0;maxaveragebitrate=32000`;
 
     if (fmtpRegex.test(sdp)) {
@@ -275,7 +333,6 @@ class LuraWebRTCEngine {
   private async handleIncomingSignal(payload: any, isInitiator: boolean) {
     if (!payload || !payload.type) return;
 
-    // If peer connection isn't ready yet, buffer the signal
     if (!this.pc) {
       if (payload.type === 'offer') {
         this.pendingOffer = payload;
@@ -287,7 +344,6 @@ class LuraWebRTCEngine {
 
     try {
       if (payload.type === 'offer') {
-        // Handle glare / offer collision gracefully
         if (this.pc.signalingState !== 'stable') {
           if (!isInitiator) {
             try {
@@ -296,7 +352,6 @@ class LuraWebRTCEngine {
               console.warn('[WebRTC] Rollback ignored', e);
             }
           } else {
-            // Initiator ignores incoming offer collision
             return;
           }
         }
@@ -371,13 +426,11 @@ class LuraWebRTCEngine {
           this.remoteAudioSource.disconnect();
         } catch {}
       }
-      // Clone stream so visual analysis does not resample or jitter the HTMLAudioElement playback
       const clonedStream = stream.clone();
       this.remoteAudioSource = ctx.createMediaStreamSource(clonedStream);
       this.remoteAnalyser = ctx.createAnalyser();
       this.remoteAnalyser.fftSize = 256;
       this.remoteAnalyser.smoothingTimeConstant = 0.4;
-      // Connect ONLY to analyser node for visual waves (NEVER to destination to prevent echo)
       this.remoteAudioSource.connect(this.remoteAnalyser);
     } catch (err) {
       console.warn('Remote AudioContext analysis setup failed', err);
@@ -391,7 +444,6 @@ class LuraWebRTCEngine {
     const checkAudioLevels = () => {
       if (!this.isCalling) return;
 
-      // Local Speaking Detection
       if (this.localAnalyser && !this.isMuted) {
         this.localAnalyser.getByteFrequencyData(localData);
         let sum = 0;
@@ -403,7 +455,6 @@ class LuraWebRTCEngine {
         this.onSpeakingChange(false);
       }
 
-      // Remote Peer Speaking Detection
       if (this.remoteAnalyser && !this.isDeafened) {
         this.remoteAnalyser.getByteFrequencyData(remoteData);
         let sum = 0;
@@ -423,6 +474,9 @@ class LuraWebRTCEngine {
 
   public setMuted(muted: boolean) {
     this.isMuted = muted;
+    if (this.isUsingLiveKit && this.livekitRoom) {
+      this.livekitRoom.localParticipant.setMicrophoneEnabled(!muted).catch(() => {});
+    }
     if (this.localStream) {
       this.localStream.getAudioTracks().forEach((track) => {
         track.enabled = !muted;
@@ -465,6 +519,11 @@ class LuraWebRTCEngine {
     constraints?: { noiseSuppression?: boolean; echoCancellation?: boolean; autoGainControl?: boolean }
   ) {
     try {
+      if (this.isUsingLiveKit && this.livekitRoom) {
+        await this.livekitRoom.switchActiveDevice('audioinput', deviceId);
+        return;
+      }
+
       const newStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           deviceId: deviceId ? { exact: deviceId } : undefined,
@@ -494,7 +553,6 @@ class LuraWebRTCEngine {
       this.localStream = newStream;
 
       this.setupLocalAudioAnalysis(newStream);
-      console.log('Audio input device switched successfully:', deviceId);
     } catch (err) {
       console.error('Failed to switch audio input device', err);
       throw err;
@@ -503,6 +561,12 @@ class LuraWebRTCEngine {
 
   public cleanup() {
     this.isCalling = false;
+    if (this.livekitRoom) {
+      this.livekitRoom.disconnect().catch(() => {});
+      this.livekitRoom = null;
+    }
+    this.isUsingLiveKit = false;
+
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;

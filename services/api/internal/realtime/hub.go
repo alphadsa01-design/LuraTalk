@@ -17,25 +17,37 @@ import (
 	"airtak/services/api/internal/matchmaking"
 	"airtak/services/api/internal/models"
 	"airtak/services/api/internal/moderation"
+	"airtak/services/api/internal/telemetry"
 	"airtak/services/api/internal/trust"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 )
 
+type DirectCallInvite struct {
+	CallID    string
+	CallerID  string
+	CalleeID  string
+	RoomName  string
+	ExpiresAt time.Time
+}
+
 type Hub struct {
-	Clients        map[string]*Client           // userID -> *Client
-	Rooms          map[string]map[string]*Client // roomName -> userID -> *Client
-	Register       chan *Client
-	Unregister     chan *Client
-	Broadcast      chan []byte
-	MatchEngine    *matchmaking.MatchmakingEngine
+	Clients         map[string]*Client            // userID -> *Client
+	Rooms           map[string]map[string]*Client  // roomName -> userID -> *Client
+	PendingInvites  map[string]*DirectCallInvite  // callID -> *DirectCallInvite
+	Register        chan *Client
+	Unregister      chan *Client
+	Broadcast       chan []byte
+	MatchEngine     *matchmaking.MatchmakingEngine
 	LiveKitTokenGen *livekit.TokenGenerator
-	AIEngine       *ai.AssistantEngine
-	GameManager    *games.GameManager
-	TrustEngine    *trust.TrustEngine
-	ModService     *moderation.ModerationService
-	Cfg            *config.Config
-	mu             sync.RWMutex
+	AIEngine        *ai.AssistantEngine
+	GameManager     *games.GameManager
+	TrustEngine     *trust.TrustEngine
+	ModService      *moderation.ModerationService
+	Cfg             *config.Config
+	mu              sync.RWMutex
 }
 
 func NewHub(
@@ -50,6 +62,7 @@ func NewHub(
 	return &Hub{
 		Clients:         make(map[string]*Client),
 		Rooms:           make(map[string]map[string]*Client),
+		PendingInvites:  make(map[string]*DirectCallInvite),
 		Register:        make(chan *Client),
 		Unregister:      make(chan *Client),
 		Broadcast:       make(chan []byte),
@@ -93,39 +106,93 @@ func (h *Hub) Run() {
 			// Remove from matchmaking queue
 			h.MatchEngine.LeaveQueue(client.UserID)
 
-			// Clean from active room and notify peer
-			if client.ActiveRoom != "" {
-				if roomClients, exists := h.Rooms[client.ActiveRoom]; exists {
-					delete(roomClients, client.UserID)
-					for _, peer := range roomClients {
-						peer.SendJSON("match:peer_left", map[string]string{
-							"userId": client.UserID,
-							"reason": "disconnected",
-						})
-						peer.SendJSON("lounge:peer_left", map[string]string{
-							"userId":   client.UserID,
-							"username": client.Username,
-						})
-					}
-					if len(roomClients) == 0 {
-						delete(h.Rooms, client.ActiveRoom)
-					}
+			// Clean up any pending invites involving this client
+			for cid, inv := range h.PendingInvites {
+				if inv.CallerID == client.UserID || inv.CalleeID == client.UserID {
+					delete(h.PendingInvites, cid)
 				}
 			}
 			h.mu.Unlock()
+
+			// Auto-notify active room peers
+			if client.ActiveRoom != "" {
+				h.mu.Lock()
+				if room, ok := h.Rooms[client.ActiveRoom]; ok {
+					delete(room, client.UserID)
+					for _, peer := range room {
+						peer.SendJSON("match:peer_left", map[string]string{
+							"userId": client.UserID,
+							"reason": "client_disconnected",
+						})
+						peer.SendJSON("lounge:peer_left", map[string]string{
+							"userId": client.UserID,
+							"reason": "client_disconnected",
+						})
+					}
+					if len(room) == 0 {
+						delete(h.Rooms, client.ActiveRoom)
+					}
+				}
+				h.mu.Unlock()
+				h.finalizeConversation(client.ActiveRoom)
+			}
+
+		case message := <-h.Broadcast:
+			h.mu.RLock()
+			for _, client := range h.Clients {
+				client.mu.Lock()
+				if !client.isClosed {
+					select {
+					case client.Send <- message:
+					default:
+					}
+				}
+				client.mu.Unlock()
+			}
+			h.mu.RUnlock()
 		}
 	}
 }
 
-// ServeWS upgrades the HTTP request to WebSocket
+// ServeWS upgrades the HTTP request to WebSocket with header-based authentication
 func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	if tokenStr == "" {
-		http.Error(w, "Unauthorized: missing token", http.StatusUnauthorized)
+	var token string
+	var selectedSubprotocol string
+
+	// 1. Authorization header (e.g. backend / native clients)
+	if authH := r.Header.Get("Authorization"); authH != "" {
+		parts := strings.Split(authH, " ")
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			token = strings.TrimSpace(parts[1])
+		}
+	}
+
+	// 2. Sec-WebSocket-Protocol header (browser WebSocket clients)
+	if token == "" {
+		if protoHeader := r.Header.Get("Sec-WebSocket-Protocol"); protoHeader != "" {
+			protocols := strings.Split(protoHeader, ",")
+			for i, p := range protocols {
+				trimmed := strings.TrimSpace(p)
+				if strings.EqualFold(trimmed, "aura-auth") && i+1 < len(protocols) {
+					token = strings.TrimSpace(protocols[i+1])
+					selectedSubprotocol = "aura-auth"
+					break
+				} else if len(trimmed) > 20 && strings.Count(trimmed, ".") == 2 {
+					// Direct JWT passed as subprotocol
+					token = trimmed
+					selectedSubprotocol = trimmed
+					break
+				}
+			}
+		}
+	}
+
+	if token == "" {
+		http.Error(w, "Unauthorized: missing websocket authorization header or protocol", http.StatusUnauthorized)
 		return
 	}
 
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
+	claims, err := auth.ValidateJWT(h.Cfg, token)
 	if err != nil {
 		http.Error(w, "Unauthorized: invalid token", http.StatusUnauthorized)
 		return
@@ -143,7 +210,24 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  2048,
+		WriteBufferSize: 2048,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true
+			}
+			return h.Cfg.IsOriginAllowed(origin)
+		},
+	}
+
+	var respHeader http.Header
+	if selectedSubprotocol != "" {
+		respHeader = http.Header{"Sec-WebSocket-Protocol": []string{selectedSubprotocol}}
+	}
+
+	conn, err := upgrader.Upgrade(w, r, respHeader)
 	if err != nil {
 		log.Printf("WS upgrade error: %v", err)
 		return
@@ -159,6 +243,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.Register <- client
+	telemetry.Monitor.RecordEvent(telemetry.EventWSConnect)
 
 	go client.WritePump()
 	go client.ReadPump()
@@ -233,33 +318,43 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 		log.Printf("Error generating LiveKit tokens: %v %v", errA, errB)
 	}
 
-	// Record Conversation in DB in background so match dispatch is instant (<1ms)
+	// Record Conversation atomically in DB in background so match dispatch is instant (<1ms)
 	convID := uuid.New()
 	now := time.Now().UTC()
 	go func(cID uuid.UUID, rName, uA, uB string, n time.Time) {
-		database.DB.Create(&models.Conversation{
-			ID:              cID,
-			RoomName:        rName,
-			Type:            "random_voice",
-			DurationSeconds: 0,
-			CreatedAt:       n,
-		})
 		uidA, errUA := uuid.Parse(uA)
 		uidB, errUB := uuid.Parse(uB)
-		if errUA == nil && errUB == nil {
-			database.DB.Create(&models.ConversationParticipant{
+		if errUA != nil || errUB != nil {
+			return
+		}
+
+		_ = database.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&models.Conversation{
+				ID:              cID,
+				RoomName:        rName,
+				Type:            "random_voice",
+				DurationSeconds: 0,
+				CreatedAt:       n,
+			}).Error; err != nil {
+				return err
+			}
+
+			if err := tx.Create(&models.ConversationParticipant{
 				ID:             uuid.New(),
 				ConversationID: cID,
 				UserID:         uidA,
 				JoinedAt:       n,
-			})
-			database.DB.Create(&models.ConversationParticipant{
+			}).Error; err != nil {
+				return err
+			}
+
+			return tx.Create(&models.ConversationParticipant{
 				ID:             uuid.New(),
 				ConversationID: cID,
 				UserID:         uidB,
 				JoinedAt:       n,
-			})
-		}
+			}).Error
+		})
 	}(convID, pair.RoomName, clientA.UserID, clientB.UserID, now)
 
 	// Generate AI icebreaker suggestion
@@ -341,7 +436,24 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			ticket.UserID = client.UserID
 			ticket.Username = client.Username
 			ticket.AvatarID = client.AvatarID
+
+			// Overwrite TrustScore and CountryCode directly from database user
+			uUUID, err := uuid.Parse(client.UserID)
+			if err == nil {
+				if dbUser, err := auth.GetUserByID(uUUID); err == nil && dbUser != nil {
+					ticket.TrustScore = dbUser.TrustScore
+					ticket.CountryCode = dbUser.CountryCode
+					if dbUser.AvatarID != "" {
+						ticket.AvatarID = dbUser.AvatarID
+					}
+				}
+			}
+			if ticket.TrustScore == 0 {
+				ticket.TrustScore = 100
+			}
+
 			h.MatchEngine.JoinQueue(&ticket)
+			telemetry.Monitor.RecordEvent(telemetry.EventMatchQueue)
 			client.SendJSON("queue:status", map[string]interface{}{
 				"status":  "queued",
 				"mode":    ticket.Mode,
@@ -386,7 +498,15 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 
 		callerUUID, err1 := uuid.Parse(client.UserID)
 		targetUUID, err2 := uuid.Parse(payload.TargetUserID)
-		if err1 == nil && err2 == nil && h.ModService.IsBlocked(targetUUID, callerUUID) {
+		if err1 != nil || err2 != nil || callerUUID == targetUUID {
+			client.SendJSON("direct:call_failed", map[string]string{
+				"reason":  "invalid_target",
+				"message": "Cannot call this user.",
+			})
+			return
+		}
+
+		if h.ModService.IsBlocked(targetUUID, callerUUID) || h.ModService.IsBlocked(callerUUID, targetUUID) {
 			client.SendJSON("direct:call_failed", map[string]string{
 				"reason":  "blocked",
 				"message": "Cannot call this user.",
@@ -415,7 +535,18 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 		}
 
 		callID := uuid.New().String()
-		roomName := "direct_" + callID[:8]
+		roomName := "direct_" + callID[:12]
+
+		// Server stores validated pending call invite
+		h.mu.Lock()
+		h.PendingInvites[callID] = &DirectCallInvite{
+			CallID:    callID,
+			CallerID:  client.UserID,
+			CalleeID:  targetClient.UserID,
+			RoomName:  roomName,
+			ExpiresAt: time.Now().Add(45 * time.Second),
+		}
+		h.mu.Unlock()
 
 		// Notify callee with incoming call bar
 		targetClient.SendJSON("direct:incoming_call", map[string]interface{}{
@@ -437,16 +568,40 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 
 	case "direct:call_accept":
 		var payload struct {
-			CallID   string `json:"callId"`
-			CallerID string `json:"callerId"`
-			RoomName string `json:"roomName"`
+			CallID string `json:"callId"`
 		}
-		if err := json.Unmarshal(msg.Payload, &payload); err != nil || payload.CallerID == "" || payload.RoomName == "" {
+		if err := json.Unmarshal(msg.Payload, &payload); err != nil || payload.CallID == "" {
+			return
+		}
+
+		// Retrieve and validate server-minted pending invite
+		h.mu.Lock()
+		invite, inviteExists := h.PendingInvites[payload.CallID]
+		if inviteExists {
+			delete(h.PendingInvites, payload.CallID)
+		}
+		h.mu.Unlock()
+
+		if !inviteExists || invite == nil || invite.CalleeID != client.UserID || time.Now().After(invite.ExpiresAt) {
+			client.SendJSON("direct:call_failed", map[string]string{
+				"reason":  "expired",
+				"message": "Call invitation has expired or is invalid.",
+			})
+			return
+		}
+
+		callerUUID, err1 := uuid.Parse(invite.CallerID)
+		calleeUUID, err2 := uuid.Parse(client.UserID)
+		if err1 != nil || err2 != nil || h.ModService.IsBlocked(calleeUUID, callerUUID) || h.ModService.IsBlocked(callerUUID, calleeUUID) {
+			client.SendJSON("direct:call_failed", map[string]string{
+				"reason":  "blocked",
+				"message": "Cannot connect to this user.",
+			})
 			return
 		}
 
 		h.mu.RLock()
-		callerClient, callerExists := h.Clients[payload.CallerID]
+		callerClient, callerExists := h.Clients[invite.CallerID]
 		h.mu.RUnlock()
 
 		if !callerExists || callerClient == nil {
@@ -457,48 +612,47 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			return
 		}
 
+		// Strictly use server-derived roomName from validated invite
+		secureRoomName := invite.RoomName
+
 		h.mu.Lock()
-		client.ActiveRoom = payload.RoomName
-		callerClient.ActiveRoom = payload.RoomName
-		if h.Rooms[payload.RoomName] == nil {
-			h.Rooms[payload.RoomName] = make(map[string]*Client)
+		client.ActiveRoom = secureRoomName
+		callerClient.ActiveRoom = secureRoomName
+		if h.Rooms[secureRoomName] == nil {
+			h.Rooms[secureRoomName] = make(map[string]*Client)
 		}
-		h.Rooms[payload.RoomName][client.UserID] = client
-		h.Rooms[payload.RoomName][callerClient.UserID] = callerClient
+		h.Rooms[secureRoomName][client.UserID] = client
+		h.Rooms[secureRoomName][callerClient.UserID] = callerClient
 		h.mu.Unlock()
 
-		tokenCallee, _ := h.LiveKitTokenGen.GenerateRoomToken(payload.RoomName, client.UserID, client.Username, true)
-		tokenCaller, _ := h.LiveKitTokenGen.GenerateRoomToken(payload.RoomName, callerClient.UserID, callerClient.Username, true)
+		tokenCallee, _ := h.LiveKitTokenGen.GenerateRoomToken(secureRoomName, client.UserID, client.Username, true)
+		tokenCaller, _ := h.LiveKitTokenGen.GenerateRoomToken(secureRoomName, callerClient.UserID, callerClient.Username, true)
 
 		convID := uuid.New()
 		now := time.Now().UTC()
 		database.DB.Create(&models.Conversation{
 			ID:              convID,
-			RoomName:        payload.RoomName,
+			RoomName:        secureRoomName,
 			Type:            "direct_voice",
 			DurationSeconds: 0,
 			CreatedAt:       now,
 		})
-		uidA, errA := uuid.Parse(callerClient.UserID)
-		uidB, errB := uuid.Parse(client.UserID)
-		if errA == nil && errB == nil {
-			database.DB.Create(&models.ConversationParticipant{
-				ID:             uuid.New(),
-				ConversationID: convID,
-				UserID:         uidA,
-				JoinedAt:       now,
-			})
-			database.DB.Create(&models.ConversationParticipant{
-				ID:             uuid.New(),
-				ConversationID: convID,
-				UserID:         uidB,
-				JoinedAt:       now,
-			})
-		}
+		database.DB.Create(&models.ConversationParticipant{
+			ID:             uuid.New(),
+			ConversationID: convID,
+			UserID:         callerUUID,
+			JoinedAt:       now,
+		})
+		database.DB.Create(&models.ConversationParticipant{
+			ID:             uuid.New(),
+			ConversationID: convID,
+			UserID:         calleeUUID,
+			JoinedAt:       now,
+		})
 
 		callerClient.SendJSON("match:found", map[string]interface{}{
 			"matchId":      convID.String(),
-			"roomName":     payload.RoomName,
+			"roomName":     secureRoomName,
 			"livekitToken": tokenCaller,
 			"livekitUrl":   h.LiveKitTokenGen.GetLiveKitURL(),
 			"isInitiator":  true,
@@ -512,7 +666,7 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 
 		client.SendJSON("match:found", map[string]interface{}{
 			"matchId":      convID.String(),
-			"roomName":     payload.RoomName,
+			"roomName":     secureRoomName,
 			"livekitToken": tokenCallee,
 			"livekitUrl":   h.LiveKitTokenGen.GetLiveKitURL(),
 			"isInitiator":  false,
@@ -526,58 +680,48 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 
 	case "direct:call_reject":
 		var payload struct {
+			CallID   string `json:"callId"`
 			CallerID string `json:"callerId"`
 		}
-		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.CallerID != "" {
-			h.mu.RLock()
-			callerClient, exists := h.Clients[payload.CallerID]
-			h.mu.RUnlock()
-			if exists && callerClient != nil {
-				callerClient.SendJSON("direct:call_rejected", map[string]string{
-					"reason":  "declined",
-					"message": "Call was declined.",
-				})
+		if err := json.Unmarshal(msg.Payload, &payload); err == nil {
+			if payload.CallID != "" {
+				h.mu.Lock()
+				delete(h.PendingInvites, payload.CallID)
+				h.mu.Unlock()
 			}
-		}
-
-	case "direct:call_block":
-		var payload struct {
-			CallerID string `json:"callerId"`
-		}
-		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.CallerID != "" {
-			calleeUUID, err1 := uuid.Parse(client.UserID)
-			callerUUID, err2 := uuid.Parse(payload.CallerID)
-			if err1 == nil && err2 == nil {
-				h.ModService.BlockUser(calleeUUID, callerUUID)
+			if payload.CallerID != "" {
+				h.mu.RLock()
+				callerClient, exists := h.Clients[payload.CallerID]
+				h.mu.RUnlock()
+				if exists && callerClient != nil {
+					callerClient.SendJSON("direct:call_rejected", map[string]string{
+						"reason":  "declined",
+						"message": "Call was declined.",
+					})
+				}
 			}
-
-			h.mu.RLock()
-			callerClient, exists := h.Clients[payload.CallerID]
-			h.mu.RUnlock()
-			if exists && callerClient != nil {
-				callerClient.SendJSON("direct:call_rejected", map[string]string{
-					"reason":  "blocked",
-					"message": "Call was declined.",
-				})
-			}
-
-			client.SendJSON("safety:alert", map[string]string{
-				"message": "User has been blocked. You will no longer receive calls from them.",
-			})
 		}
 
 	case "direct:call_cancel":
 		var payload struct {
+			CallID       string `json:"callId"`
 			TargetUserID string `json:"targetUserId"`
 		}
-		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.TargetUserID != "" {
-			h.mu.RLock()
-			targetClient, exists := h.Clients[payload.TargetUserID]
-			h.mu.RUnlock()
-			if exists && targetClient != nil {
-				targetClient.SendJSON("direct:call_cancelled", map[string]string{
-					"callerId": client.UserID,
-				})
+		if err := json.Unmarshal(msg.Payload, &payload); err == nil {
+			if payload.CallID != "" {
+				h.mu.Lock()
+				delete(h.PendingInvites, payload.CallID)
+				h.mu.Unlock()
+			}
+			if payload.TargetUserID != "" {
+				h.mu.RLock()
+				targetClient, exists := h.Clients[payload.TargetUserID]
+				h.mu.RUnlock()
+				if exists && targetClient != nil {
+					targetClient.SendJSON("direct:call_cancelled", map[string]string{
+						"callerId": client.UserID,
+					})
+				}
 			}
 		}
 
@@ -794,8 +938,9 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 
 	case "webrtc:signal":
 		if client.ActiveRoom != "" {
-			var raw interface{}
+			var raw map[string]interface{}
 			if err := json.Unmarshal(msg.Payload, &raw); err == nil {
+				raw["fromUserId"] = client.UserID
 				h.broadcastToRoomExcept(client.ActiveRoom, client.UserID, "webrtc:signal", raw)
 			}
 		}
@@ -888,10 +1033,20 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			Description    string `json:"description"`
 		}
 		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.ReportedUserID != "" {
-			reporterUUID, _ := uuid.Parse(client.UserID)
-			reportedUUID, _ := uuid.Parse(payload.ReportedUserID)
-			h.ModService.CreateReport(reporterUUID, reportedUUID, nil, payload.Reason, payload.Description)
-			h.TrustEngine.UpdateTrustScore(reportedUUID, -20, "report_received")
+			reporterUUID, err1 := uuid.Parse(client.UserID)
+			reportedUUID, err2 := uuid.Parse(payload.ReportedUserID)
+			if err1 != nil || err2 != nil || reporterUUID == reportedUUID {
+				client.SendJSON("safety:alert", map[string]string{
+					"message": "Invalid report submission.",
+				})
+				return
+			}
+
+			_, isNew, err := h.ModService.CreateReport(reporterUUID, reportedUUID, nil, payload.Reason, payload.Description)
+			if err == nil && isNew {
+				h.TrustEngine.UpdateTrustScore(reportedUUID, -20, "report_received")
+				telemetry.Monitor.RecordEvent(telemetry.EventUserReport)
+			}
 
 			client.SendJSON("safety:alert", map[string]string{
 				"message": "Report submitted. Our moderation team is reviewing this.",
@@ -903,43 +1058,40 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			FriendID string `json:"friendId"`
 		}
 		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.FriendID != "" {
-			userUUID, _ := uuid.Parse(client.UserID)
-			friendUUID, _ := uuid.Parse(payload.FriendID)
+			userUUID, err1 := uuid.Parse(client.UserID)
+			friendUUID, err2 := uuid.Parse(payload.FriendID)
 
-			if userUUID != friendUUID {
-				// Save bilateral mutual friendships
-				var f1 models.Friendship
-				if err := database.DB.Where("user_id = ? AND friend_id = ?", userUUID, friendUUID).First(&f1).Error; err != nil {
-					f1 = models.Friendship{
-						ID:        uuid.New(),
-						UserID:    userUUID,
-						FriendID:  friendUUID,
-						Status:    "accepted",
-						CreatedAt: time.Now().UTC(),
+			if err1 == nil && err2 == nil && userUUID != friendUUID {
+				if !h.ModService.IsBlocked(userUUID, friendUUID) {
+					var existing models.Friendship
+					if err := database.DB.Where("user_id = ? AND friend_id = ?", userUUID, friendUUID).First(&existing).Error; err != nil {
+						reqFriendship := models.Friendship{
+							ID:        uuid.New(),
+							UserID:    userUUID,
+							FriendID:  friendUUID,
+							Status:    "pending",
+							CreatedAt: time.Now().UTC(),
+						}
+						database.DB.Create(&reqFriendship)
 					}
-					database.DB.Create(&f1)
-				}
 
-				var f2 models.Friendship
-				if err := database.DB.Where("user_id = ? AND friend_id = ?", friendUUID, userUUID).First(&f2).Error; err != nil {
-					f2 = models.Friendship{
-						ID:        uuid.New(),
-						UserID:    friendUUID,
-						FriendID:  userUUID,
-						Status:    "accepted",
-						CreatedAt: time.Now().UTC(),
+					// Notify recipient live if online
+					h.mu.RLock()
+					targetClient, exists := h.Clients[payload.FriendID]
+					h.mu.RUnlock()
+					if exists && targetClient != nil {
+						targetClient.SendJSON("friend:request_received", map[string]interface{}{
+							"fromUserId":   client.UserID,
+							"fromUsername": client.Username,
+							"fromAvatarId": client.AvatarID,
+						})
 					}
-					database.DB.Create(&f2)
+
+					client.SendJSON("friend:request_sent", map[string]string{
+						"status":   "pending",
+						"friendId": payload.FriendID,
+					})
 				}
-
-				h.TrustEngine.UpdateTrustScore(userUUID, +5, "friend_added")
-				h.TrustEngine.UpdateTrustScore(friendUUID, +5, "friend_added")
-
-				h.broadcastToRoom(client.ActiveRoom, "friend:update", map[string]interface{}{
-					"status":   "accepted",
-					"friendId": payload.FriendID,
-					"message":  "You are now mutual friends! You can reconnect anytime.",
-				})
 			}
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"airtak/services/api/internal/database"
 	"airtak/services/api/internal/livekit"
 	"airtak/services/api/internal/matchmaking"
+	"airtak/services/api/internal/middleware"
 	"airtak/services/api/internal/models"
 	"airtak/services/api/internal/moderation"
 	"airtak/services/api/internal/realtime"
@@ -20,6 +22,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
+
+var usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,30}$`)
 
 type Handler struct {
 	Cfg         *config.Config
@@ -68,9 +72,8 @@ func (h *Handler) CreateAnonymousSession(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) UpgradeAccount(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -84,38 +87,25 @@ func (h *Handler) UpgradeAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+	if body.Username != "" && !usernameRegex.MatchString(body.Username) {
+		http.Error(w, "Username must be 3-30 characters (alphanumeric, underscores, hyphens only)", http.StatusBadRequest)
 		return
 	}
 
-	user, err := auth.UpgradeAnonymousUser(h.Cfg, userUUID, body.Email, body.Username)
+	upgraded, err := auth.UpgradeAnonymousUser(h.Cfg, user.ID, body.Email, body.Username)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	json.NewEncoder(w).Encode(upgraded)
 }
 
 func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	userUUID, _ := uuid.Parse(claims.UserID)
-	user, err := auth.GetUserByID(userUUID)
-	if err != nil || user == nil {
-		http.Error(w, "User not found", http.StatusNotFound)
-		return
-	}
-	if user.IsBanned {
-		http.Error(w, "Forbidden: account is suspended", http.StatusForbidden)
 		return
 	}
 
@@ -124,21 +114,9 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	userUUID, _ := uuid.Parse(claims.UserID)
-	user, err := auth.GetUserByID(userUUID)
-	if err != nil || user == nil {
-		http.Error(w, "User not found", http.StatusNotFound)
-		return
-	}
-	if user.IsBanned {
-		http.Error(w, "Forbidden: account is suspended", http.StatusForbidden)
 		return
 	}
 
@@ -160,8 +138,22 @@ func (h *Handler) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.Username != "" {
-		user.Username = body.Username
+		trimmedUsername := strings.TrimSpace(body.Username)
+		if !usernameRegex.MatchString(trimmedUsername) {
+			http.Error(w, "Username must be 3-30 characters containing only letters, numbers, underscores, and hyphens", http.StatusBadRequest)
+			return
+		}
+
+		if !strings.EqualFold(trimmedUsername, user.Username) {
+			var existing models.User
+			if err := database.DB.Where("LOWER(username) = LOWER(?) AND id != ?", trimmedUsername, user.ID).First(&existing).Error; err == nil {
+				http.Error(w, "Username is already taken by another account", http.StatusBadRequest)
+				return
+			}
+			user.Username = trimmedUsername
+		}
 	}
+
 	if body.AvatarID != "" {
 		user.AvatarID = body.AvatarID
 	}
@@ -211,21 +203,13 @@ func (h *Handler) GetRooms(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetRoomToken(w http.ResponseWriter, r *http.Request) {
-	roomIDStr := chi.URLParam(r, "id")
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	userUUID, _ := uuid.Parse(claims.UserID)
-	user, err := auth.GetUserByID(userUUID)
-	if err != nil || user == nil || user.IsBanned {
-		http.Error(w, "Forbidden: account is suspended", http.StatusForbidden)
-		return
-	}
-
+	roomIDStr := chi.URLParam(r, "id")
 	var room models.Room
 	if err := database.DB.First(&room, "id = ?", roomIDStr).Error; err != nil {
 		http.Error(w, "Room not found", http.StatusNotFound)
@@ -233,7 +217,7 @@ func (h *Handler) GetRoomToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	roomName := "lounge_" + room.ID.String()[:8]
-	lkToken, err := h.LiveKitGen.GenerateRoomToken(roomName, claims.UserID, claims.Username, true)
+	lkToken, err := h.LiveKitGen.GenerateRoomToken(roomName, user.ID.String(), user.Username, true)
 	if err != nil {
 		http.Error(w, "Failed to generate room token", http.StatusInternalServerError)
 		return
@@ -249,9 +233,8 @@ func (h *Handler) GetRoomToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateRoom(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -268,7 +251,6 @@ func (h *Handler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userUUID, _ := uuid.Parse(claims.UserID)
 	if req.MaxParticipants <= 0 || req.MaxParticipants > 50 {
 		req.MaxParticipants = 15
 	}
@@ -284,7 +266,7 @@ func (h *Handler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 		MaxParticipants:     req.MaxParticipants,
 		CurrentParticipants: 1,
 		IsActive:            true,
-		CreatedBy:           userUUID,
+		CreatedBy:           user.ID,
 		Tags:                models.StringArray(req.Tags),
 		CreatedAt:           time.Now().UTC(),
 	}
@@ -300,27 +282,20 @@ func (h *Handler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetFriends(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	userUUID, _ := uuid.Parse(claims.UserID)
-	user, err := auth.GetUserByID(userUUID)
-	if err != nil || user == nil || user.IsBanned {
-		http.Error(w, "Forbidden: account is suspended", http.StatusForbidden)
-		return
-	}
-
 	var friendships []models.Friendship
-	database.DB.Preload("Friend").Where("user_id = ? AND status = 'accepted'", userUUID).Find(&friendships)
+	database.DB.Preload("Friend").Where("user_id = ? AND status = 'accepted'", user.ID).Find(&friendships)
 
 	type FriendResponse struct {
-		ID       uuid.UUID   `json:"id"`
-		Friend   models.User `json:"friend"`
-		IsOnline bool        `json:"isOnline"`
+		ID       uuid.UUID         `json:"id"`
+		Friend   models.UserPublic `json:"friend"`
+		Status   string            `json:"status"`
+		IsOnline bool              `json:"isOnline"`
 	}
 
 	var res []FriendResponse
@@ -330,7 +305,8 @@ func (h *Handler) GetFriends(w http.ResponseWriter, r *http.Request) {
 
 			res = append(res, FriendResponse{
 				ID:       f.ID,
-				Friend:   *f.Friend,
+				Friend:   f.Friend.ToPublic(),
+				Status:   f.Status,
 				IsOnline: isOnline,
 			})
 		}
@@ -341,14 +317,12 @@ func (h *Handler) GetFriends(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AddFriend(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	userUUID, _ := uuid.Parse(claims.UserID)
 	var body struct {
 		FriendUsername string `json:"username"`
 		FriendID       string `json:"friendId"`
@@ -360,7 +334,11 @@ func (h *Handler) AddFriend(w http.ResponseWriter, r *http.Request) {
 
 	var targetUser models.User
 	if body.FriendID != "" {
-		targetUUID, _ := uuid.Parse(body.FriendID)
+		targetUUID, err := uuid.Parse(body.FriendID)
+		if err != nil {
+			http.Error(w, "Invalid friend ID format", http.StatusBadRequest)
+			return
+		}
 		if err := database.DB.First(&targetUser, "id = ?", targetUUID).Error; err != nil {
 			http.Error(w, "User not found", http.StatusNotFound)
 			return
@@ -375,52 +353,114 @@ func (h *Handler) AddFriend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if targetUser.ID == userUUID {
+	if targetUser.ID == user.ID {
 		http.Error(w, "Cannot add yourself as a friend", http.StatusBadRequest)
 		return
 	}
 
-	// Create bilateral friendship
-	var f1 models.Friendship
-	if err := database.DB.Where("user_id = ? AND friend_id = ?", userUUID, targetUser.ID).First(&f1).Error; err != nil {
-		f1 = models.Friendship{
-			ID:        uuid.New(),
-			UserID:    userUUID,
-			FriendID:  targetUser.ID,
-			Status:    "accepted",
-			CreatedAt: time.Now().UTC(),
-		}
-		database.DB.Create(&f1)
+	// Bilateral block check
+	if h.ModService.IsBlocked(user.ID, targetUser.ID) {
+		http.Error(w, "Unable to send friend request to this user", http.StatusForbidden)
+		return
 	}
 
-	var f2 models.Friendship
-	if err := database.DB.Where("user_id = ? AND friend_id = ?", targetUser.ID, userUUID).First(&f2).Error; err != nil {
-		f2 = models.Friendship{
-			ID:        uuid.New(),
-			UserID:    targetUser.ID,
-			FriendID:  userUUID,
-			Status:    "accepted",
-			CreatedAt: time.Now().UTC(),
-		}
-		database.DB.Create(&f2)
+	// Check if already friends or pending
+	var existing models.Friendship
+	if err := database.DB.Where("user_id = ? AND friend_id = ?", user.ID, targetUser.ID).First(&existing).Error; err == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": existing.Status,
+			"friend": targetUser.ToPublic(),
+		})
+		return
+	}
+
+	// Create single pending friend request row (consensual friendship)
+	reqFriendship := models.Friendship{
+		ID:        uuid.New(),
+		UserID:    user.ID,
+		FriendID:  targetUser.ID,
+		Status:    "pending",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := database.DB.Create(&reqFriendship).Error; err != nil {
+		http.Error(w, "Failed to submit friend request", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status": "added",
-		"friend": targetUser,
+		"status": "pending",
+		"friend": targetUser.ToPublic(),
 	})
 }
 
-func (h *Handler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+func (h *Handler) AcceptFriendRequest(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	userUUID, _ := uuid.Parse(claims.UserID)
+	var body struct {
+		FriendID string `json:"friendId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.FriendID == "" {
+		http.Error(w, "Friend ID is required", http.StatusBadRequest)
+		return
+	}
+
+	friendUUID, err := uuid.Parse(body.FriendID)
+	if err != nil {
+		http.Error(w, "Invalid friend ID", http.StatusBadRequest)
+		return
+	}
+
+	if h.ModService.IsBlocked(user.ID, friendUUID) {
+		http.Error(w, "Unable to connect with this user", http.StatusForbidden)
+		return
+	}
+
+	// Update incoming pending request
+	var incoming models.Friendship
+	if err := database.DB.Where("user_id = ? AND friend_id = ?", friendUUID, user.ID).First(&incoming).Error; err != nil {
+		http.Error(w, "No pending friend request found from this user", http.StatusNotFound)
+		return
+	}
+
+	incoming.Status = "accepted"
+	database.DB.Save(&incoming)
+
+	// Create or update reciprocal friendship row
+	var reciprocal models.Friendship
+	if err := database.DB.Where("user_id = ? AND friend_id = ?", user.ID, friendUUID).First(&reciprocal).Error; err != nil {
+		reciprocal = models.Friendship{
+			ID:        uuid.New(),
+			UserID:    user.ID,
+			FriendID:  friendUUID,
+			Status:    "accepted",
+			CreatedAt: time.Now().UTC(),
+		}
+		database.DB.Create(&reciprocal)
+	} else {
+		reciprocal.Status = "accepted"
+		database.DB.Save(&reciprocal)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":   "accepted",
+		"friendId": friendUUID.String(),
+	})
+}
+
+func (h *Handler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	friendIDStr := chi.URLParam(r, "id")
 	friendUUID, err := uuid.Parse(friendIDStr)
 	if err != nil {
@@ -429,9 +469,9 @@ func (h *Handler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete mutual friendships
-	database.DB.Where("(user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)", userUUID, friendUUID, friendUUID, userUUID).Delete(&models.Friendship{})
+	database.DB.Where("(user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)", user.ID, friendUUID, friendUUID, user.ID).Delete(&models.Friendship{})
 	// Delete shared conversation memories
-	database.DB.Where("(user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)", userUUID, friendUUID, friendUUID, userUUID).Delete(&models.ConversationMemory{})
+	database.DB.Where("(user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)", user.ID, friendUUID, friendUUID, user.ID).Delete(&models.ConversationMemory{})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -440,28 +480,25 @@ func (h *Handler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	userUUID, _ := uuid.Parse(claims.UserID)
-
 	// Fetch participant records for this user
 	var participants []models.ConversationParticipant
-	database.DB.Where("user_id = ?", userUUID).Order("joined_at desc").Limit(50).Find(&participants)
+	database.DB.Where("user_id = ?", user.ID).Order("joined_at desc").Limit(50).Find(&participants)
 
 	type HistoryItem struct {
-		ID              uuid.UUID   `json:"id"`
-		ConversationID  uuid.UUID   `json:"conversationId"`
-		RoomName        string      `json:"roomName"`
-		DurationSeconds int         `json:"durationSeconds"`
-		CreatedAt       time.Time   `json:"createdAt"`
-		Partner         models.User `json:"partner"`
-		IsPartnerOnline bool        `json:"isPartnerOnline"`
-		IsFriend        bool        `json:"isFriend"`
+		ID              uuid.UUID         `json:"id"`
+		ConversationID  uuid.UUID         `json:"conversationId"`
+		RoomName        string            `json:"roomName"`
+		DurationSeconds int               `json:"durationSeconds"`
+		CreatedAt       time.Time         `json:"createdAt"`
+		Partner         models.UserPublic `json:"partner"`
+		IsPartnerOnline bool              `json:"isPartnerOnline"`
+		IsFriend        bool              `json:"isFriend"`
 	}
 
 	var results []HistoryItem
@@ -473,7 +510,7 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 
 		// Find other participant
 		var otherParticipant models.ConversationParticipant
-		if err := database.DB.Where("conversation_id = ? AND user_id != ?", p.ConversationID, userUUID).First(&otherParticipant).Error; err != nil {
+		if err := database.DB.Where("conversation_id = ? AND user_id != ?", p.ConversationID, user.ID).First(&otherParticipant).Error; err != nil {
 			continue
 		}
 
@@ -486,7 +523,7 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 
 		// Check if friendship exists
 		var friendshipCount int64
-		database.DB.Model(&models.Friendship{}).Where("user_id = ? AND friend_id = ? AND status = 'accepted'", userUUID, partnerUser.ID).Count(&friendshipCount)
+		database.DB.Model(&models.Friendship{}).Where("user_id = ? AND friend_id = ? AND status = 'accepted'", user.ID, partnerUser.ID).Count(&friendshipCount)
 
 		results = append(results, HistoryItem{
 			ID:              p.ID,
@@ -494,7 +531,7 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 			RoomName:        conv.RoomName,
 			DurationSeconds: conv.DurationSeconds,
 			CreatedAt:       conv.CreatedAt,
-			Partner:         partnerUser,
+			Partner:         partnerUser.ToPublic(),
 			IsPartnerOnline: isOnline,
 			IsFriend:        friendshipCount > 0,
 		})
@@ -505,39 +542,29 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteHistory(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	userUUID, _ := uuid.Parse(claims.UserID)
+	idStr := chi.URLParam(r, "id")
 	pUUID, err := uuid.Parse(idStr)
 	if err != nil {
 		http.Error(w, "Invalid history ID", http.StatusBadRequest)
 		return
 	}
 
-	database.DB.Where("id = ? AND user_id = ?", pUUID, userUUID).Delete(&models.ConversationParticipant{})
+	database.DB.Where("id = ? AND user_id = ?", pUUID, user.ID).Delete(&models.ConversationParticipant{})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
 func (h *Handler) GetMemories(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	userUUID, _ := uuid.Parse(claims.UserID)
-	user, err := auth.GetUserByID(userUUID)
-	if err != nil || user == nil || user.IsBanned {
-		http.Error(w, "Forbidden: account is suspended", http.StatusForbidden)
 		return
 	}
 
@@ -545,24 +572,16 @@ func (h *Handler) GetMemories(w http.ResponseWriter, r *http.Request) {
 	friendUUID, _ := uuid.Parse(friendIDStr)
 
 	var memories []models.ConversationMemory
-	database.DB.Where("user_id = ? AND friend_id = ?", userUUID, friendUUID).Order("created_at desc").Find(&memories)
+	database.DB.Where("user_id = ? AND friend_id = ?", user.ID, friendUUID).Order("created_at desc").Find(&memories)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(memories)
 }
 
 func (h *Handler) SaveMemory(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	userUUID, _ := uuid.Parse(claims.UserID)
-	user, err := auth.GetUserByID(userUUID)
-	if err != nil || user == nil || user.IsBanned {
-		http.Error(w, "Forbidden: account is suspended", http.StatusForbidden)
 		return
 	}
 
@@ -579,7 +598,7 @@ func (h *Handler) SaveMemory(w http.ResponseWriter, r *http.Request) {
 
 	memory := models.ConversationMemory{
 		ID:           uuid.New(),
-		UserID:       userUUID,
+		UserID:       user.ID,
 		FriendID:     friendUUID,
 		TopicSummary: body.TopicSummary,
 		CreatedAt:    time.Now().UTC(),
@@ -591,30 +610,39 @@ func (h *Handler) SaveMemory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteMemory(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	memIDStr := chi.URLParam(r, "id")
-	userUUID, _ := uuid.Parse(claims.UserID)
 	memUUID, _ := uuid.Parse(memIDStr)
 
-	database.DB.Where("id = ? AND user_id = ?", memUUID, userUUID).Delete(&models.ConversationMemory{})
+	database.DB.Where("id = ? AND user_id = ?", memUUID, user.ID).Delete(&models.ConversationMemory{})
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 }
 
-func (h *Handler) GetAdminStats(w http.ResponseWriter, r *http.Request) {
-	adminKey := r.Header.Get("X-Admin-Key")
-	if adminKey != h.Cfg.AdminAPIKey && r.URL.Query().Get("key") != h.Cfg.AdminAPIKey {
-		http.Error(w, "Unauthorized admin access", http.StatusUnauthorized)
-		return
+func (h *Handler) GetPublicStats(w http.ResponseWriter, r *http.Request) {
+	onlineCount := h.Hub.GetOnlineCount()
+	activeRooms := h.Hub.GetActiveRoomsCount()
+	queueDepth := h.MatchEngine.GetQueueCount()
+
+	stats := map[string]interface{}{
+		"onlineCount": onlineCount,
+		"activeRooms": activeRooms,
+		"queueDepth":  queueDepth,
+		"timestamp":   time.Now().UnixMilli(),
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	json.NewEncoder(w).Encode(stats)
+}
+
+func (h *Handler) GetAdminStats(w http.ResponseWriter, r *http.Request) {
 	var totalUsers, activeRoomsCount, totalReports, totalBlocks int64
 	database.DB.Model(&models.User{}).Count(&totalUsers)
 	database.DB.Model(&models.Room{}).Where("is_active = ?", true).Count(&activeRoomsCount)
@@ -627,66 +655,23 @@ func (h *Handler) GetAdminStats(w http.ResponseWriter, r *http.Request) {
 	rates, alerts := telemetry.Monitor.GetMetrics()
 
 	stats := map[string]interface{}{
-		"activeOnlineUsers":       h.Hub.GetOnlineCount(),
-		"activeVoiceRooms":        h.Hub.GetActiveRoomsCount(),
-		"matchQueueDepth":         h.MatchEngine.GetQueueCount(),
-		"totalRegistered":         totalUsers,
-		"openReportsCount":        totalReports,
-		"totalBlocksRecorded":     totalBlocks,
-		"securityRatesPerMinute":  rates,
-		"securityAlerts":          alerts,
-		"systemLatencyP95Ms":      14.2,
-		"matchSuccessRate":        "99.1%",
-		"webrtcSuccessRate":       "99.6%",
-		"connectionFailureRate":   "0.4%",
-		"dailyActiveUsers":        totalUsers + int64(h.Hub.GetOnlineCount()*3) + 12,
-		"retentionDay7":           "68.4%",
-		"rooms":                   rooms,
-		"recentAnalyticsEvents": []map[string]interface{}{
-			{"event": "matchmaking_success", "timestamp": time.Now().Add(-12 * time.Second).UnixMilli(), "metadata": "Voice match paired in 142ms"},
-			{"event": "voice_connected", "timestamp": time.Now().Add(-35 * time.Second).UnixMilli(), "metadata": "LiveKit SFU audio stream established"},
-			{"event": "mystery_unlocked", "timestamp": time.Now().Add(-1 * time.Minute).UnixMilli(), "metadata": "Interests revealed (Gaming, Music)"},
-			{"event": "friend_requested", "timestamp": time.Now().Add(-2 * time.Minute).UnixMilli(), "metadata": "Mutual friend connection created"},
-			{"event": "game_started", "timestamp": time.Now().Add(-3 * time.Minute).UnixMilli(), "metadata": "TicTacToe match initiated in call"},
-			{"event": "room_joined", "timestamp": time.Now().Add(-5 * time.Minute).UnixMilli(), "metadata": "User joined 'Late Night Gaming' lounge"},
-		},
-		"timestamp": time.Now().UnixMilli(),
+		"activeOnlineUsers":      h.Hub.GetOnlineCount(),
+		"activeVoiceRooms":       h.Hub.GetActiveRoomsCount(),
+		"matchQueueDepth":        h.MatchEngine.GetQueueCount(),
+		"totalRegistered":        totalUsers,
+		"openReportsCount":       totalReports,
+		"totalBlocksRecorded":    totalBlocks,
+		"securityRatesPerMinute": rates,
+		"securityAlerts":         alerts,
+		"rooms":                  rooms,
+		"timestamp":              time.Now().UnixMilli(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
-}
-
-func (h *Handler) GetPublicStats(w http.ResponseWriter, r *http.Request) {
-	onlineCount := h.Hub.GetOnlineCount()
-	activeRooms := h.Hub.GetActiveRoomsCount()
-	queueDepth := h.MatchEngine.GetQueueCount()
-
-	// Guarantee natural minimum display baseline for early-stage or dev environments
-	displayCount := onlineCount
-	if displayCount < 1 {
-		displayCount = 1
-	}
-
-	stats := map[string]interface{}{
-		"onlineCount": displayCount,
-		"activeRooms": activeRooms,
-		"queueDepth":  queueDepth,
-		"timestamp":   time.Now().UnixMilli(),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	json.NewEncoder(w).Encode(stats)
 }
 
 func (h *Handler) GetAdminReports(w http.ResponseWriter, r *http.Request) {
-	adminKey := r.Header.Get("X-Admin-Key")
-	if adminKey != h.Cfg.AdminAPIKey && r.URL.Query().Get("key") != h.Cfg.AdminAPIKey {
-		http.Error(w, "Unauthorized admin access", http.StatusUnauthorized)
-		return
-	}
-
 	reports, err := h.ModService.GetOpenReports()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -698,22 +683,27 @@ func (h *Handler) GetAdminReports(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ActionAdminReport(w http.ResponseWriter, r *http.Request) {
-	adminKey := r.Header.Get("X-Admin-Key")
-	if adminKey != h.Cfg.AdminAPIKey && r.URL.Query().Get("key") != h.Cfg.AdminAPIKey {
-		log.Printf("[ADMIN SECURITY] Unauthorized admin access attempt from IP: %s", r.RemoteAddr)
-		http.Error(w, "Unauthorized admin access", http.StatusUnauthorized)
+	reportIDStr := chi.URLParam(r, "id")
+	reportUUID, err := uuid.Parse(reportIDStr)
+	if err != nil {
+		http.Error(w, "Invalid report ID", http.StatusBadRequest)
 		return
 	}
 
-	reportIDStr := chi.URLParam(r, "id")
-	reportUUID, _ := uuid.Parse(reportIDStr)
-
 	var body struct {
-		Action string `json:"action"` // "banned", "dismissed", "warned"
+		Action string `json:"action"` // "resolved", "dismissed", "warned", "banned", "action_taken", "rejected"
 	}
-	json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid action payload", http.StatusBadRequest)
+		return
+	}
 
-	h.ModService.ActionReport(reportUUID, body.Action)
+	if err := h.ModService.ActionReport(reportUUID, body.Action); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	telemetry.Monitor.RecordEvent(telemetry.EventAdminAction)
 	log.Printf("[ADMIN AUDIT] ip=%s action=ACTION_REPORT reportId=%s reportAction=%s", r.RemoteAddr, reportIDStr, body.Action)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -721,13 +711,6 @@ func (h *Handler) ActionAdminReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AdminCreateRoom(w http.ResponseWriter, r *http.Request) {
-	adminKey := r.Header.Get("X-Admin-Key")
-	if adminKey != h.Cfg.AdminAPIKey && r.URL.Query().Get("key") != h.Cfg.AdminAPIKey {
-		log.Printf("[ADMIN SECURITY] Unauthorized admin access attempt from IP: %s", r.RemoteAddr)
-		http.Error(w, "Unauthorized admin access", http.StatusUnauthorized)
-		return
-	}
-
 	var body struct {
 		Title           string   `json:"title"`
 		Topic           string   `json:"topic"`
@@ -767,15 +750,12 @@ func (h *Handler) AdminCreateRoom(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AdminDeleteRoom(w http.ResponseWriter, r *http.Request) {
-	adminKey := r.Header.Get("X-Admin-Key")
-	if adminKey != h.Cfg.AdminAPIKey && r.URL.Query().Get("key") != h.Cfg.AdminAPIKey {
-		log.Printf("[ADMIN SECURITY] Unauthorized admin access attempt from IP: %s", r.RemoteAddr)
-		http.Error(w, "Unauthorized admin access", http.StatusUnauthorized)
+	roomIDStr := chi.URLParam(r, "id")
+	roomUUID, err := uuid.Parse(roomIDStr)
+	if err != nil {
+		http.Error(w, "Invalid room ID", http.StatusBadRequest)
 		return
 	}
-
-	roomIDStr := chi.URLParam(r, "id")
-	roomUUID, _ := uuid.Parse(roomIDStr)
 
 	database.DB.Model(&models.Room{}).Where("id = ?", roomUUID).Update("is_active", false)
 	log.Printf("[ADMIN AUDIT] ip=%s action=DELETE_ROOM roomId=%s", r.RemoteAddr, roomIDStr)
@@ -785,15 +765,12 @@ func (h *Handler) AdminDeleteRoom(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AdminRevokeUser(w http.ResponseWriter, r *http.Request) {
-	adminKey := r.Header.Get("X-Admin-Key")
-	if adminKey != h.Cfg.AdminAPIKey && r.URL.Query().Get("key") != h.Cfg.AdminAPIKey {
-		log.Printf("[ADMIN SECURITY] Unauthorized admin access attempt from IP: %s", r.RemoteAddr)
-		http.Error(w, "Unauthorized admin access", http.StatusUnauthorized)
+	userIDStr := chi.URLParam(r, "id")
+	userUUID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
 		return
 	}
-
-	userIDStr := chi.URLParam(r, "id")
-	userUUID, _ := uuid.Parse(userIDStr)
 
 	database.DB.Where("user_id = ?", userUUID).Delete(&models.AnonymousSession{})
 	database.DB.Model(&models.User{}).Where("id = ?", userUUID).Update("is_banned", true)
@@ -807,9 +784,8 @@ func (h *Handler) AdminRevokeUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateReport(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -822,12 +798,6 @@ func (h *Handler) CreateReport(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
-		return
-	}
-
-	reporterUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		http.Error(w, "Invalid user token", http.StatusUnauthorized)
 		return
 	}
 
@@ -844,10 +814,14 @@ func (h *Handler) CreateReport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	report, err := h.ModService.CreateReport(reporterUUID, reportedUUID, convUUID, body.Reason, body.Description)
+	report, isNew, err := h.ModService.CreateReport(user.ID, reportedUUID, convUUID, body.Reason, body.Description)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+
+	if isNew {
+		telemetry.Monitor.RecordEvent(telemetry.EventUserReport)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -855,9 +829,8 @@ func (h *Handler) CreateReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) BlockUser(w http.ResponseWriter, r *http.Request) {
-	tokenStr := auth.ExtractTokenFromRequest(r)
-	claims, err := auth.ValidateJWT(h.Cfg, tokenStr)
-	if err != nil {
+	user := middleware.GetAuthenticatedUser(r)
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -870,23 +843,20 @@ func (h *Handler) BlockUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blockerUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		http.Error(w, "Invalid user token", http.StatusUnauthorized)
-		return
-	}
-
 	blockedUUID, err := uuid.Parse(body.BlockedID)
 	if err != nil {
 		http.Error(w, "Invalid blocked user ID", http.StatusBadRequest)
 		return
 	}
 
-	block, err := h.ModService.BlockUser(blockerUUID, blockedUUID)
+	block, err := h.ModService.BlockUser(user.ID, blockedUUID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	// Immediately update in-memory matchmaking block table
+	h.MatchEngine.AddBlock(user.ID.String(), body.BlockedID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(block)
