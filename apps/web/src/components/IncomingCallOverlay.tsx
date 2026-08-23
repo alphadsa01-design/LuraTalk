@@ -88,6 +88,21 @@ export default function IncomingCallOverlay() {
   const handleAccept = () => {
     sounds.stopIncomingRingtone();
     if (!incomingCall) return;
+
+    // Immediately pre-populate call store and prewarm mic for instant connection
+    useCallStore.getState().setMatchFound({
+      matchId: incomingCall.callId,
+      roomName: incomingCall.roomName,
+      isInitiator: false,
+      peer: {
+        id: incomingCall.callerId,
+        username: incomingCall.callerName,
+        avatarId: incomingCall.callerAvatarId,
+        mysteryLevel: 3,
+      },
+    });
+
+    webrtcEngine.warmupMicrophone().catch(() => {});
     socketClient.acceptDirectCall(incomingCall.callId, incomingCall.callerId, incomingCall.roomName);
     setIncomingCall(null);
     router.push('/match?mode=voice&acceptedCall=1');

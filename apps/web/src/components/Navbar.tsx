@@ -68,7 +68,6 @@ export default function Navbar() {
 
   const navItems = [
     { name: 'Match', href: '/', icon: Radio },
-    { name: 'Lounges', href: '/rooms', icon: Compass },
     { name: 'Friends', href: '/friends', icon: Users },
     { name: 'History', href: '/history', icon: History },
   ];
@@ -96,11 +95,11 @@ export default function Navbar() {
                   href={item.href}
                   className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                     isActive
-                      ? 'bg-primary/15 text-white shadow-sm border border-primary/30'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      ? 'bg-white/10 text-white shadow-sm border border-white/20'
+                      : 'text-neutral-400 hover:text-white hover:bg-white/5'
                   }`}
                 >
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-primary-light' : ''}`} />
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : ''}`} />
                   <span>{item.name}</span>
                 </Link>
               );

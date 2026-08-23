@@ -117,8 +117,8 @@ export const useUserStore = create<UserState>()(
         })),
     }),
     {
-      name: 'luratalk_user_storage',
-      storage: createJSONStorage(() => localStorage),
+      name: 'luratalk_user_session_v3',
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         token: state.token,
         user: state.user,

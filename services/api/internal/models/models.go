@@ -125,6 +125,7 @@ type Friendship struct {
 	UserID    uuid.UUID `gorm:"type:uuid;index;not null" json:"userId"`
 	FriendID  uuid.UUID `gorm:"type:uuid;index;not null" json:"friendId"`
 	Friend    *User     `gorm:"foreignKey:FriendID" json:"friend,omitempty"`
+	User      *User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Status    string    `gorm:"size:20;default:'pending'" json:"status"` // pending, accepted, rejected
 	CreatedAt time.Time `json:"createdAt"`
 }

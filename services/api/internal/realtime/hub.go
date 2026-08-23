@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -249,6 +250,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	h.Register <- client
 	telemetry.Monitor.RecordEvent(telemetry.EventWSConnect)
+	telemetry.Monitor.RecordSystemLog("WS", fmt.Sprintf("WebSocket client connected: @%s (ID: %s)", client.Username, client.UserID[:8]), "info")
 
 	go client.WritePump()
 	go client.ReadPump()
@@ -326,14 +328,39 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 	// Record Conversation atomically in DB in background so match dispatch is instant (<1ms)
 	convID := uuid.New()
 	now := time.Now().UTC()
-	go func(cID uuid.UUID, rName, uA, uB string, n time.Time) {
+	go func(cID uuid.UUID, rName, uA, uB, unameA, unameB, avA, avB string, n time.Time) {
 		uidA, errUA := uuid.Parse(uA)
 		uidB, errUB := uuid.Parse(uB)
 		if errUA != nil || errUB != nil {
 			return
 		}
 
-		_ = database.DB.Transaction(func(tx *gorm.DB) error {
+		// Ensure both users are in the DB before inserting participant foreign keys
+		var userA, userB models.User
+		if err := database.DB.First(&userA, "id = ?", uidA).Error; err != nil {
+			userA = models.User{
+				ID:          uidA,
+				IsAnonymous: true,
+				Username:    unameA,
+				AvatarID:    avA,
+				CreatedAt:   n,
+				UpdatedAt:   n,
+			}
+			_ = database.DB.Create(&userA)
+		}
+		if err := database.DB.First(&userB, "id = ?", uidB).Error; err != nil {
+			userB = models.User{
+				ID:          uidB,
+				IsAnonymous: true,
+				Username:    unameB,
+				AvatarID:    avB,
+				CreatedAt:   n,
+				UpdatedAt:   n,
+			}
+			_ = database.DB.Create(&userB)
+		}
+
+		txErr := database.DB.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Create(&models.Conversation{
 				ID:              cID,
 				RoomName:        rName,
@@ -360,7 +387,10 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 				JoinedAt:       n,
 			}).Error
 		})
-	}(convID, pair.RoomName, clientA.UserID, clientB.UserID, now)
+		if txErr != nil {
+			log.Printf("[Hub] Conversation history save error: %v", txErr)
+		}
+	}(convID, pair.RoomName, clientA.UserID, clientB.UserID, clientA.Username, clientB.Username, clientA.AvatarID, clientB.AvatarID, now)
 
 	// Generate AI icebreaker suggestion
 	icebreaker := h.AIEngine.GenerateIcebreaker(pair.SharedInterests, pair.TicketA.Preferences.Intention, pair.TicketA.Preferences.Mood)
@@ -369,6 +399,7 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 	clientA.SendJSON("match:found", map[string]interface{}{
 		"matchId":     pair.MatchID,
 		"roomName":    pair.RoomName,
+		"mode":        pair.TicketA.Mode,
 		"livekitToken": tokenA,
 		"livekitUrl":  h.LiveKitTokenGen.GetLiveKitURL(),
 		"isInitiator": true,
@@ -389,6 +420,7 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 	clientB.SendJSON("match:found", map[string]interface{}{
 		"matchId":     pair.MatchID,
 		"roomName":    pair.RoomName,
+		"mode":        pair.TicketB.Mode,
 		"livekitToken": tokenB,
 		"livekitUrl":  h.LiveKitTokenGen.GetLiveKitURL(),
 		"isInitiator": false,
@@ -762,115 +794,6 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			})
 		}
 
-	case "lounge:join":
-		var payload struct {
-			RoomID   string `json:"roomId"`
-			RoomName string `json:"roomName"`
-		}
-		if err := json.Unmarshal(msg.Payload, &payload); err != nil || payload.RoomName == "" {
-			return
-		}
-
-		h.mu.Lock()
-		// Clean up previous room if any
-		if client.ActiveRoom != "" && client.ActiveRoom != payload.RoomName {
-			if prevRoomClients, exists := h.Rooms[client.ActiveRoom]; exists {
-				delete(prevRoomClients, client.UserID)
-				for _, peer := range prevRoomClients {
-					peer.SendJSON("lounge:peer_left", map[string]string{
-						"userId":   client.UserID,
-						"username": client.Username,
-					})
-				}
-				if len(prevRoomClients) == 0 {
-					delete(h.Rooms, client.ActiveRoom)
-				}
-			}
-		}
-
-		client.ActiveRoom = payload.RoomName
-		if h.Rooms[payload.RoomName] == nil {
-			h.Rooms[payload.RoomName] = make(map[string]*Client)
-		}
-		h.Rooms[payload.RoomName][client.UserID] = client
-
-		// Collect existing peers in this lounge
-		var peers []map[string]interface{}
-		for _, peer := range h.Rooms[payload.RoomName] {
-			if peer.UserID != client.UserID {
-				peers = append(peers, map[string]interface{}{
-					"id":       peer.UserID,
-					"username": peer.Username,
-					"avatarId": peer.AvatarID,
-				})
-			}
-		}
-
-		// Notify other peers in this lounge that client joined
-		for _, peer := range h.Rooms[payload.RoomName] {
-			if peer.UserID != client.UserID {
-				peer.SendJSON("lounge:peer_joined", map[string]interface{}{
-					"id":       client.UserID,
-					"username": client.Username,
-					"avatarId": client.AvatarID,
-				})
-			}
-		}
-
-		totalCount := len(h.Rooms[payload.RoomName])
-		h.mu.Unlock()
-
-		// Persist live room participant count to database
-		if payload.RoomID != "" {
-			if rUUID, err := uuid.Parse(payload.RoomID); err == nil {
-				go database.DB.Model(&models.Room{}).Where("id = ?", rUUID).Update("current_participants", totalCount)
-			}
-		}
-
-		// Send existing peers list to the newly joined client
-		client.SendJSON("lounge:peers", map[string]interface{}{
-			"roomName": payload.RoomName,
-			"peers":    peers,
-		})
-
-	case "lounge:leave":
-		h.mu.Lock()
-		if client.ActiveRoom != "" {
-			activeRoom := client.ActiveRoom
-			if roomClients, exists := h.Rooms[activeRoom]; exists {
-				delete(roomClients, client.UserID)
-				remainingCount := len(roomClients)
-				for _, peer := range roomClients {
-					peer.SendJSON("lounge:peer_left", map[string]string{
-						"userId":   client.UserID,
-						"username": client.Username,
-					})
-				}
-				if len(roomClients) == 0 {
-					delete(h.Rooms, activeRoom)
-				}
-				// Persist decrement to room if it's a lounge
-				if strings.HasPrefix(activeRoom, "lounge_") {
-					shortID := strings.TrimPrefix(activeRoom, "lounge_")
-					go database.DB.Model(&models.Room{}).Where("CAST(id AS TEXT) LIKE ?", shortID+"%").Update("current_participants", remainingCount)
-				}
-			}
-			client.ActiveRoom = ""
-		}
-		h.mu.Unlock()
-
-	case "lounge:reaction":
-		var payload struct {
-			Emoji string `json:"emoji"`
-		}
-		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.Emoji != "" {
-			h.broadcastToRoomExcept(client.ActiveRoom, client.UserID, "lounge:reaction", map[string]interface{}{
-				"emoji":    payload.Emoji,
-				"userId":   client.UserID,
-				"username": client.Username,
-			})
-		}
-
 	case "chat:send":
 		if client.ActiveRoom == "" {
 			return
@@ -1068,6 +991,53 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 
 			if err1 == nil && err2 == nil && userUUID != friendUUID {
 				if !h.ModService.IsBlocked(userUUID, friendUUID) {
+					// Check if reciprocal pending request already exists (mutual friend match)
+					var reverseReq models.Friendship
+					if err := database.DB.Where("user_id = ? AND friend_id = ? AND status = 'pending'", friendUUID, userUUID).First(&reverseReq).Error; err == nil {
+						// Mutual add! Accept both sides
+						reverseReq.Status = "accepted"
+						database.DB.Save(&reverseReq)
+
+						var myReciprocal models.Friendship
+						if err := database.DB.Where("user_id = ? AND friend_id = ?", userUUID, friendUUID).First(&myReciprocal).Error; err != nil {
+							myReciprocal = models.Friendship{
+								ID:        uuid.New(),
+								UserID:    userUUID,
+								FriendID:  friendUUID,
+								Status:    "accepted",
+								CreatedAt: time.Now().UTC(),
+							}
+							database.DB.Create(&myReciprocal)
+						} else {
+							myReciprocal.Status = "accepted"
+							database.DB.Save(&myReciprocal)
+						}
+
+						// Notify both users in real-time
+						h.mu.RLock()
+						targetClient, exists := h.Clients[payload.FriendID]
+						h.mu.RUnlock()
+						if exists && targetClient != nil {
+							targetClient.SendJSON("friend:update", map[string]interface{}{
+								"status":   "accepted",
+								"friendId": client.UserID,
+							})
+							targetClient.SendJSON("friend:accepted", map[string]interface{}{
+								"friendId": client.UserID,
+								"username": client.Username,
+							})
+						}
+
+						client.SendJSON("friend:update", map[string]interface{}{
+							"status":   "accepted",
+							"friendId": payload.FriendID,
+						})
+						client.SendJSON("friend:accepted", map[string]interface{}{
+							"friendId": payload.FriendID,
+						})
+						return
+					}
+
 					var existing models.Friendship
 					if err := database.DB.Where("user_id = ? AND friend_id = ?", userUUID, friendUUID).First(&existing).Error; err != nil {
 						reqFriendship := models.Friendship{
@@ -1090,9 +1060,17 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 							"fromUsername": client.Username,
 							"fromAvatarId": client.AvatarID,
 						})
+						targetClient.SendJSON("friend:update", map[string]interface{}{
+							"status":   "pending",
+							"friendId": client.UserID,
+						})
 					}
 
 					client.SendJSON("friend:request_sent", map[string]string{
+						"status":   "pending",
+						"friendId": payload.FriendID,
+					})
+					client.SendJSON("friend:update", map[string]interface{}{
 						"status":   "pending",
 						"friendId": payload.FriendID,
 					})

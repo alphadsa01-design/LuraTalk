@@ -41,11 +41,22 @@ var AnomalyThresholds = map[EventType]int64{
 	EventRedisAnomaly:      5,   // >5 redis connection errors/min
 }
 
+type SystemLogEntry struct {
+	ID        int64     `json:"id"`
+	Type      string    `json:"type"` // "MATCH", "WS", "LIVEKIT", "SEC", "ROOM"
+	Text      string    `json:"text"`
+	Time      string    `json:"time"`
+	Level     string    `json:"level"` // "info", "warn", "success", "error"
+	Timestamp time.Time `json:"timestamp"`
+}
+
 // SecurityMonitor provides thread-safe real-time telemetry and anomaly detection
 type SecurityMonitor struct {
 	mu           sync.RWMutex
 	eventWindows map[EventType][]time.Time
 	alertHistory []SecurityAlert
+	systemLogs   []SystemLogEntry
+	logCounter   int64
 }
 
 type SecurityAlert struct {
@@ -67,10 +78,53 @@ func NewSecurityMonitor() *SecurityMonitor {
 	sm := &SecurityMonitor{
 		eventWindows: make(map[EventType][]time.Time),
 		alertHistory: make([]SecurityAlert, 0),
+		systemLogs:   make([]SystemLogEntry, 0),
 	}
 	// Start periodic cleanup of stale event windows
 	go sm.cleanupLoop()
 	return sm
+}
+
+// RecordSystemLog adds a live real event to the system logs ring-buffer
+func (sm *SecurityMonitor) RecordSystemLog(logType, text, level string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.logCounter++
+	entry := SystemLogEntry{
+		ID:        sm.logCounter,
+		Type:      logType,
+		Text:      text,
+		Time:      "Just now",
+		Level:     level,
+		Timestamp: time.Now(),
+	}
+
+	sm.systemLogs = append([]SystemLogEntry{entry}, sm.systemLogs...)
+	if len(sm.systemLogs) > 100 {
+		sm.systemLogs = sm.systemLogs[:100]
+	}
+}
+
+// GetSystemLogs returns the latest live system event logs
+func (sm *SecurityMonitor) GetSystemLogs() []SystemLogEntry {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	now := time.Now()
+	res := make([]SystemLogEntry, len(sm.systemLogs))
+	for i, entry := range sm.systemLogs {
+		diff := now.Sub(entry.Timestamp)
+		timeStr := "Just now"
+		if diff >= time.Minute {
+			timeStr = diff.Truncate(time.Minute).String() + " ago"
+		} else if diff >= time.Second*5 {
+			timeStr = diff.Truncate(time.Second).String() + " ago"
+		}
+		entry.Time = timeStr
+		res[i] = entry
+	}
+	return res
 }
 
 // RecordEvent logs an occurrence and evaluates if a security anomaly spike is active

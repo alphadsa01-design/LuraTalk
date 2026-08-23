@@ -15,6 +15,12 @@ import {
 } from 'lucide-react';
 import { useUserStore, getDicebearAvatarUrl, AVATAR_PRESETS } from '@/stores/useUserStore';
 import { fetchCallHistory, deleteCallHistory, addFriend, getOrCreateAnonymousSession } from '@/lib/api';
+import {
+  getLocalCallHistory,
+  saveLocalCallHistoryItem,
+  deleteLocalCallHistoryItem,
+  saveLocalFriend,
+} from '@/lib/storage';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface HistoryItem {
@@ -45,6 +51,13 @@ export default function HistoryPage() {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   useEffect(() => {
+    // 1. Instantly load from client local storage (zero DB latency)
+    const local = getLocalCallHistory();
+    if (local && local.length > 0) {
+      setHistory(local as any);
+      setLoading(false);
+    }
+
     async function loadData() {
       let activeToken = token;
       if (!activeToken) {
@@ -61,10 +74,20 @@ export default function HistoryPage() {
 
       if (activeToken) {
         try {
-          const data = await fetchCallHistory(activeToken);
-          setHistory(data || []);
+          const remote = await fetchCallHistory(activeToken);
+          // Merge local and remote without duplicates
+          const mergedMap = new Map();
+          [...(remote || []), ...local].forEach((item) => {
+            const key = item.conversationId || item.id;
+            if (!mergedMap.has(key)) {
+              mergedMap.set(key, item);
+            }
+          });
+          const merged = Array.from(mergedMap.values());
+          setHistory(merged as any);
+          merged.forEach((m) => saveLocalCallHistoryItem(m));
         } catch (err) {
-          console.error('Failed to load history', err);
+          console.warn('Using offline cached call history', err);
         } finally {
           setLoading(false);
         }
@@ -74,28 +97,42 @@ export default function HistoryPage() {
   }, [token, setAuth]);
 
   const handleDelete = async (id: string) => {
-    if (!token) return;
-    try {
-      await deleteCallHistory(token, id);
-      setHistory((prev) => prev.filter((item) => item.id !== id));
-      showToast('Call removed from history');
-    } catch (err) {
-      console.error('Failed to delete history', err);
+    deleteLocalCallHistoryItem(id);
+    setHistory((prev) => prev.filter((item) => item.id !== id && item.conversationId !== id));
+    showToast('Call removed from history');
+    if (token) {
+      deleteCallHistory(token, id).catch(() => {});
     }
   };
 
   const handleAddFriend = async (partnerId: string) => {
-    if (!token) return;
-    try {
-      await addFriend(token, partnerId);
-      setHistory((prev) =>
-        prev.map((item) =>
-          item.partner.id === partnerId ? { ...item, isFriend: true } : item
-        )
-      );
-      showToast('Friend added successfully!');
-    } catch (err) {
-      console.error('Failed to add friend', err);
+    const targetItem = history.find((h) => h.partner?.id === partnerId);
+    saveLocalFriend({
+      id: `friend_${partnerId}`,
+      friend: {
+        id: partnerId,
+        username: targetItem?.partner?.username || 'Partner',
+        avatarId: targetItem?.partner?.avatarId || 'aura_1',
+        mood: 'chill',
+        intention: 'casual',
+        interests: targetItem?.partner?.interests || [],
+      },
+      status: 'pending',
+      isOnline: true,
+      isIncoming: false,
+    });
+
+    setHistory((prev) =>
+      prev.map((item) =>
+        item.partner.id === partnerId ? { ...item, isFriend: true } : item
+      )
+    );
+    showToast('Friend added successfully!');
+
+    if (token) {
+      addFriend(token, partnerId).catch((err) => {
+        console.warn('Friend request saved locally; DB sync failed', err);
+      });
     }
   };
 

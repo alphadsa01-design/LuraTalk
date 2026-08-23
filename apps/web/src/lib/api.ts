@@ -154,14 +154,18 @@ export async function fetchFriends(token: string) {
   return res.json();
 }
 
-export async function addFriend(token: string, username: string) {
+export async function addFriend(token: string, target: string) {
+  const cleanTarget = target ? target.trim() : '';
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanTarget);
+  const payload = isUUID ? { friendId: cleanTarget } : { username: cleanTarget };
+
   const res = await fetch(`${API_BASE}/api/v1/friends/add`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ username }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const data = await res.text();

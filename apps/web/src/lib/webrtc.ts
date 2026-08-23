@@ -69,11 +69,12 @@ class LuraWebRTCEngine {
         el.setAttribute('playsinline', 'true');
         el.setAttribute('webkit-playsinline', 'true');
         el.style.position = 'fixed';
-        el.style.top = '-9999px';
-        el.style.left = '-9999px';
+        el.style.bottom = '0px';
+        el.style.right = '0px';
         el.style.width = '1px';
         el.style.height = '1px';
-        el.style.opacity = '0';
+        el.style.opacity = '0.01';
+        el.style.pointerEvents = 'none';
         document.body.appendChild(el);
       }
       this.remoteAudio = el;
@@ -117,8 +118,14 @@ class LuraWebRTCEngine {
     this.ensureRemoteAudioElement();
     this.getOrCreateAudioContext();
 
-    // Strategy 1: Attempt LiveKit SFU if Token & URL are configured
-    if (options.livekitToken && options.livekitUrl) {
+    // Strategy 1: Attempt LiveKit SFU ONLY if a valid, live remote LiveKit host is provided
+    const isLiveKitAvailable =
+      Boolean(options.livekitToken && options.livekitUrl) &&
+      !options.livekitUrl?.includes('localhost') &&
+      !options.livekitUrl?.includes('example.com') &&
+      !options.livekitUrl?.includes('127.0.0.1');
+
+    if (isLiveKitAvailable) {
       try {
         const success = await this.connectLiveKitSFU(options);
         if (success) {
@@ -130,7 +137,7 @@ class LuraWebRTCEngine {
       }
     }
 
-    // Strategy 2: Enterprise P2P WebRTC with STUN & TURN
+    // Strategy 2: Enterprise P2P WebRTC with Google STUN (sub-50ms connection)
     await this.connectP2PWebRTC(options);
   }
 
@@ -185,6 +192,7 @@ class LuraWebRTCEngine {
 
   private async connectP2PWebRTC(options: WebRTCVoiceOptions) {
     this.isUsingLiveKit = false;
+    this.ensureRemoteAudioElement();
 
     this.unsubSignal = socketClient.on('webrtc:signal', async (payload: any) => {
       await this.handleIncomingSignal(payload, !!options.isInitiator);
@@ -197,36 +205,22 @@ class LuraWebRTCEngine {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true,
+            sampleRate: 48000,
             channelCount: 1,
           },
           video: false,
         });
       }
 
-      // STUN + Enterprise TURN Relay Servers
+      // Ultra-Fast Google STUN + Twilio Zero-Latency Cluster
       this.pc = new RTCPeerConnection({
         iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302', 'stun:stun3.l.google.com:19302', 'stun:stun4.l.google.com:19302'] },
           { urls: 'stun:global.stun.twilio.com:3478' },
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject',
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject',
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject',
-          },
         ],
-        iceCandidatePoolSize: 8,
+        iceCandidatePoolSize: 6,
         bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
       });
 
       this.localStream.getAudioTracks().forEach((track) => {
@@ -244,20 +238,24 @@ class LuraWebRTCEngine {
 
         this.remoteStream = stream;
 
-        if (this.remoteAudio) {
-          this.remoteAudio.srcObject = stream;
-          this.remoteAudio.volume = 1.0;
-          this.remoteAudio.muted = this.isDeafened;
-          const playPromise = this.remoteAudio.play();
+        const audioEl = this.ensureRemoteAudioElement();
+        if (audioEl) {
+          audioEl.srcObject = stream;
+          audioEl.volume = 1.0;
+          audioEl.muted = this.isDeafened;
+          const playPromise = audioEl.play();
           if (playPromise !== undefined) {
-            playPromise.catch(() => {
+            playPromise.catch((err) => {
+              console.warn('[WebRTC] Autoplay waiting for interaction:', err);
               const unlockAudio = () => {
-                this.remoteAudio?.play().catch(() => {});
-                document.removeEventListener('click', unlockAudio);
-                document.removeEventListener('touchstart', unlockAudio);
+                audioEl.play().catch(() => {});
+                window.removeEventListener('click', unlockAudio);
+                window.removeEventListener('touchstart', unlockAudio);
+                window.removeEventListener('keydown', unlockAudio);
               };
-              document.addEventListener('click', unlockAudio, { once: true });
-              document.addEventListener('touchstart', unlockAudio, { once: true });
+              window.addEventListener('click', unlockAudio, { once: true, passive: true });
+              window.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+              window.addEventListener('keydown', unlockAudio, { once: true, passive: true });
             });
           }
         }
@@ -269,7 +267,7 @@ class LuraWebRTCEngine {
         if (event.candidate) {
           socketClient.send('webrtc:signal', {
             type: 'candidate',
-            candidate: event.candidate,
+            candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
           });
         }
       };
@@ -327,7 +325,8 @@ class LuraWebRTCEngine {
     if (!opusMatch) return sdp;
     const pt = opusMatch[1];
     const fmtpRegex = new RegExp(`a=fmtp:${pt} (.*)`, 'g');
-    const naturalVoiceFmtp = `a=fmtp:${pt} minptime=20;ptime=20;maxptime=40;useinbandfec=1;usedtx=1;stereo=0;sprop-stereo=0;maxaveragebitrate=32000`;
+    // High-Definition Studio Voice: 64kbps HD audio, FEC enabled, DTX disabled to avoid voice clipping
+    const naturalVoiceFmtp = `a=fmtp:${pt} minptime=10;ptime=20;maxptime=60;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=64000`;
 
     if (fmtpRegex.test(sdp)) {
       return sdp.replace(fmtpRegex, naturalVoiceFmtp);

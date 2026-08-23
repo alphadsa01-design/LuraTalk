@@ -28,6 +28,11 @@ import { getOrCreateAnonymousSession } from '@/lib/api';
 import { webrtcEngine } from '@/lib/webrtc';
 import { sounds } from '@/lib/sounds';
 import { notifications } from '@/lib/notifications';
+import {
+  saveLocalCallHistoryItem,
+  saveLocalFriend,
+  acceptLocalFriendRequest,
+} from '@/lib/storage';
 import AudioVisualizer from '@/components/AudioVisualizer';
 import AIWidget from '@/components/AIWidget';
 import TranslationBar from '@/components/TranslationBar';
@@ -108,6 +113,13 @@ function MatchPageContent() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
   const [friendRequested, setFriendRequested] = useState(false);
+  const friendRequestedRef = useRef(false);
+
+  const updateFriendRequested = (val: boolean) => {
+    friendRequestedRef.current = val;
+    setFriendRequested(val);
+  };
+
   const [isGameMenuOpen, setIsGameMenuOpen] = useState(false);
   const [isAudioSettingsOpen, setIsAudioSettingsOpen] = useState(false);
 
@@ -186,22 +198,62 @@ function MatchPageContent() {
 
       const acceptedCall = searchParams?.get('acceptedCall') === '1';
 
-      // Only enter matching queue if not an accepted call and not already in an active call
-      if (!acceptedCall && useCallStore.getState().status !== 'matched') {
+      // If accepted direct call, immediately start WebRTC audio
+      if (acceptedCall) {
+        const callStore = useCallStore.getState();
+        if (callStore.roomName) {
+          webrtcEngine.startCall({
+            isInitiator: false,
+            roomName: callStore.roomName,
+            onSpeakingChange: (spk) => setSpeaking(spk),
+            onPeerSpeakingChange: (peerSpk) => setPeerSpeaking(peerSpk),
+            onDisconnected: () => {
+              console.log('[Match] WebRTC audio disconnected');
+            },
+            onError: (err) => console.error('WebRTC Call Error:', err),
+          });
+        }
+      } else {
         if (callPartnerId) {
           setStatus('searching');
           setDirectCallState('ringing');
           socketClient.directCall(callPartnerId);
         } else {
+          resetCall();
           handleStartQueue(initialMode);
         }
       }
     }
 
+    const recordCallToLocalStorage = () => {
+      const state = useCallStore.getState();
+      if (state.peer) {
+        saveLocalCallHistoryItem({
+          id: state.matchId || `call_${Date.now()}`,
+          conversationId: state.matchId || `call_${Date.now()}`,
+          roomName: state.roomName || 'voice_match',
+          durationSeconds: state.callDuration || 0,
+          createdAt: new Date().toISOString(),
+          partner: {
+            id: state.peer.id,
+            username: state.peer.username,
+            avatarId: state.peer.avatarId || state.peer.username,
+            countryCode: state.peer.countryCode,
+            mood: state.peer.mood,
+            intention: state.peer.intention,
+            interests: state.peer.sharedInterests || [],
+          },
+          isPartnerOnline: true,
+          isFriend: friendRequestedRef.current,
+        });
+      }
+    };
+
     const triggerAutoNextMatch = () => {
+      recordCallToLocalStorage();
       webrtcEngine.cleanup();
       sounds.playEndCall();
-      setFriendRequested(false);
+      updateFriendRequested(false);
       resetCall();
       setStatus('searching');
       const currentMode = useCallStore.getState().mode || initialMode || 'voice';
@@ -221,7 +273,7 @@ function MatchPageContent() {
       sounds.playMatchFound();
       notifications.showMatchFound(payload.partner?.username || 'Stranger');
       setMatchFound(payload);
-      if (initialMode === 'voice' || initialMode === 'mystery') {
+      if (payload.mode === 'voice' || payload.mode === 'mystery' || initialMode !== 'text') {
         webrtcEngine.startCall({
           isInitiator: payload.isInitiator,
           livekitToken: payload.livekitToken,
@@ -279,8 +331,42 @@ function MatchPageContent() {
       updateGameState(payload);
     });
 
-    const unsubFriend = socketClient.on('friend:update', () => {
-      setFriendRequested(true);
+    const unsubFriendReq = socketClient.on('friend:request_received', (payload: any) => {
+      updateFriendRequested(true);
+      if (payload?.fromUserId) {
+        saveLocalFriend({
+          id: `friend_${payload.fromUserId}`,
+          friend: {
+            id: payload.fromUserId,
+            username: payload.fromUsername || 'Anonymous',
+            avatarId: payload.fromAvatarId || payload.fromUsername || 'aura_1',
+            mood: 'chill',
+            intention: 'casual',
+            interests: [],
+          },
+          status: 'pending',
+          isOnline: true,
+          isIncoming: true,
+        });
+      }
+    });
+
+    const unsubFriendSent = socketClient.on('friend:request_sent', () => {
+      updateFriendRequested(true);
+    });
+
+    const unsubFriendAccepted = socketClient.on('friend:accepted', (payload: any) => {
+      updateFriendRequested(true);
+      if (payload?.friendId) {
+        acceptLocalFriendRequest(payload.friendId);
+      }
+    });
+
+    const unsubFriendUpdate = socketClient.on('friend:update', (payload: any) => {
+      updateFriendRequested(true);
+      if (payload?.friendId && payload?.status === 'accepted') {
+        acceptLocalFriendRequest(payload.friendId);
+      }
     });
 
     initAndConnect();
@@ -301,9 +387,12 @@ function MatchPageContent() {
       unsubTyping();
       unsubMystery();
       unsubGame();
-      unsubFriend();
+      unsubFriendReq();
+      unsubFriendSent();
+      unsubFriendAccepted();
+      unsubFriendUpdate();
     };
-  }, [token, initialMode, searchParams]);
+  }, [token, initialMode]);
 
   const handleStartQueue = (m: 'voice' | 'text' | 'mystery') => {
     setStatus('searching');
@@ -319,9 +408,30 @@ function MatchPageContent() {
   };
 
   const handleNextMatch = () => {
+    const state = useCallStore.getState();
+    if (state.peer) {
+      saveLocalCallHistoryItem({
+        id: state.matchId || `call_${Date.now()}`,
+        conversationId: state.matchId || `call_${Date.now()}`,
+        roomName: state.roomName || 'voice_match',
+        durationSeconds: state.callDuration || 0,
+        createdAt: new Date().toISOString(),
+        partner: {
+          id: state.peer.id,
+          username: state.peer.username,
+          avatarId: state.peer.avatarId || state.peer.username,
+          countryCode: state.peer.countryCode,
+          mood: state.peer.mood,
+          intention: state.peer.intention,
+          interests: state.peer.sharedInterests || [],
+        },
+        isPartnerOnline: true,
+        isFriend: friendRequestedRef.current,
+      });
+    }
     sounds.playSkip();
     webrtcEngine.cleanup();
-    setFriendRequested(false);
+    updateFriendRequested(false);
     resetCall();
     setStatus('searching');
     socketClient.nextMatch(mode, {
@@ -336,11 +446,32 @@ function MatchPageContent() {
   };
 
   const handleLeaveCall = () => {
+    const state = useCallStore.getState();
+    if (state.peer) {
+      saveLocalCallHistoryItem({
+        id: state.matchId || `call_${Date.now()}`,
+        conversationId: state.matchId || `call_${Date.now()}`,
+        roomName: state.roomName || 'voice_match',
+        durationSeconds: state.callDuration || 0,
+        createdAt: new Date().toISOString(),
+        partner: {
+          id: state.peer.id,
+          username: state.peer.username,
+          avatarId: state.peer.avatarId || state.peer.username,
+          countryCode: state.peer.countryCode,
+          mood: state.peer.mood,
+          intention: state.peer.intention,
+          interests: state.peer.sharedInterests || [],
+        },
+        isPartnerOnline: true,
+        isFriend: friendRequestedRef.current,
+      });
+    }
     sounds.playEndCall();
     webrtcEngine.cleanup();
     socketClient.send('call:end', {});
     socketClient.leaveQueue();
-    setFriendRequested(false);
+    updateFriendRequested(false);
     resetCall();
     setStatus('idle');
     router.push('/');
@@ -384,6 +515,18 @@ function MatchPageContent() {
     socketClient.sendTyping();
   };
 
+  const handleToggleMute = () => {
+    const nextMuted = !isMuted;
+    toggleMute();
+    webrtcEngine.setMuted(nextMuted);
+  };
+
+  const handleToggleDeafen = () => {
+    const nextDeafened = !isDeafened;
+    toggleDeafen();
+    webrtcEngine.setDeafened(nextDeafened);
+  };
+
   const handleRequestReveal = () => {
     socketClient.requestReveal();
   };
@@ -391,7 +534,22 @@ function MatchPageContent() {
   const handleSendFriendRequest = () => {
     if (peer) {
       socketClient.sendFriendRequest(peer.id);
-      setFriendRequested(true);
+      saveLocalFriend({
+        id: `friend_${peer.id}`,
+        friend: {
+          id: peer.id,
+          username: peer.username,
+          avatarId: peer.avatarId || peer.username,
+          countryCode: peer.countryCode,
+          mood: peer.mood || 'chill',
+          intention: peer.intention || 'casual',
+          interests: peer.sharedInterests || [],
+        },
+        status: 'pending',
+        isOnline: true,
+        isIncoming: false,
+      });
+      updateFriendRequested(true);
     }
   };
 
@@ -551,13 +709,13 @@ function MatchPageContent() {
           </div>
         ) : status === 'searching' ? (
           <div className="w-full h-[260px] sm:h-[340px] rounded-3xl glass-panel-glow flex flex-col items-center justify-center text-center p-6 relative overflow-hidden">
-            {/* Concentric Radar Rings - Monochrome */}
-            <div className="absolute w-44 h-44 sm:w-64 sm:h-64 rounded-full border border-white/20 animate-ping opacity-40" />
-            <div className="absolute w-64 h-64 sm:w-88 sm:h-88 rounded-full border border-white/10 animate-pulse-slow opacity-30" />
+            {/* Concentric Radar Rings - Vibrant Violet */}
+            <div className="absolute w-44 h-44 sm:w-64 sm:h-64 rounded-full border border-primary/30 animate-ping opacity-40" />
+            <div className="absolute w-64 h-64 sm:w-88 sm:h-88 rounded-full border border-secondary/20 animate-pulse-slow opacity-30" />
 
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/10 border border-white/20 p-1 shadow-2xl mb-4 relative z-10 animate-pulse">
-              <div className="w-full h-full rounded-full bg-black flex items-center justify-center text-white">
-                <Radio className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/20 border border-primary/40 p-1 shadow-2xl mb-4 relative z-10 animate-pulse">
+              <div className="w-full h-full rounded-full bg-surfaceLight flex items-center justify-center text-white">
+                <Radio className="w-8 h-8 sm:w-10 sm:h-10 text-primary-light" />
               </div>
             </div>
 
@@ -596,7 +754,7 @@ function MatchPageContent() {
 
               <button
                 onClick={handleNextMatch}
-                className="px-6 py-3 rounded-2xl bg-white text-black text-xs sm:text-sm font-bold shadow-xl shadow-white/10 hover:bg-neutral-200 hover:scale-105 transition-transform"
+                className="px-6 py-3 rounded-2xl gradient-bg text-white text-xs sm:text-sm font-bold shadow-xl shadow-primary/20 hover:scale-105 transition-transform"
               >
                 Find Next Match ➔
               </button>
@@ -612,19 +770,20 @@ function MatchPageContent() {
               peerName={peer.username}
               peerAvatar={peer.avatarId}
               sharedInterestsCount={peer.sharedInterests?.length || 0}
+              sharedInterests={peer.sharedInterests || []}
               onEndCall={handleLeaveCall}
             />
 
             {/* AI Icebreaker Card (Clean, Unobtrusive, Single-Line Strip) */}
             {icebreakerSuggestion && (
-              <div className="glass-panel px-4 py-2.5 rounded-2xl border border-white/15 flex items-center justify-between gap-3 text-xs">
+              <div className="glass-panel px-4 py-2.5 rounded-2xl border border-primary/20 flex items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-2 text-white min-w-0">
-                  <Sparkles className="w-4 h-4 text-white shrink-0" />
+                  <Sparkles className="w-4 h-4 text-primary-light shrink-0" />
                   <span className="truncate text-neutral-300">{icebreakerSuggestion}</span>
                 </div>
                 <button
                   onClick={() => handleSendMessage(icebreakerSuggestion)}
-                  className="shrink-0 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white text-white hover:text-black text-[11px] font-semibold transition-all"
+                  className="shrink-0 px-2.5 py-1 rounded-lg bg-primary/20 hover:bg-primary text-white text-[11px] font-semibold transition-all"
                 >
                   Send
                 </button>
@@ -633,16 +792,16 @@ function MatchPageContent() {
 
             {/* Live Translation Caption (If Enabled) */}
             {enableLiveTranslation && liveTranslationCaption && (
-              <div className="glass-panel px-4 py-2 rounded-2xl border border-white/20 text-center text-xs text-white font-medium animate-pulse">
+              <div className="glass-panel px-4 py-2 rounded-2xl border border-secondary/30 text-center text-xs text-white font-medium animate-pulse">
                 {liveTranslationCaption}
               </div>
             )}
           </div>
         ) : (
           <div className="w-full h-[260px] sm:h-[340px] rounded-3xl glass-panel-glow flex flex-col items-center justify-center text-center p-6 space-y-4">
-            <div className="w-16 h-16 rounded-2xl bg-white/10 border border-white/20 p-0.5 shadow-lg flex items-center justify-center">
-              <div className="w-full h-full rounded-[14px] bg-black flex items-center justify-center text-white">
-                <Radio className="w-8 h-8 text-white" />
+            <div className="w-16 h-16 rounded-2xl bg-primary/20 border border-primary/40 p-0.5 shadow-lg flex items-center justify-center">
+              <div className="w-full h-full rounded-[14px] bg-surfaceLight flex items-center justify-center text-white">
+                <Radio className="w-8 h-8 text-primary-light" />
               </div>
             </div>
             <div>
@@ -653,9 +812,9 @@ function MatchPageContent() {
             </div>
             <button
               onClick={() => handleStartQueue(initialMode)}
-              className="px-6 py-3 rounded-2xl bg-white text-black text-sm font-bold shadow-xl shadow-white/10 hover:bg-neutral-200 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+              className="px-6 py-3 rounded-2xl gradient-bg text-white text-sm font-bold shadow-xl shadow-primary/25 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
             >
-              <Radio className="w-4 h-4 text-black" />
+              <Radio className="w-4 h-4 text-white" />
               <span>Start Voice Match</span>
             </button>
           </div>
@@ -674,42 +833,47 @@ function MatchPageContent() {
             </button>
             <ChatPanel
               messages={messages}
-              currentUserId={user?.id || ''}
+              currentUserId={user?.id || 'me'}
+              peerUsername={peer?.username || 'Peer'}
+              peerId={peer?.id || 'peer'}
+              peerAvatarId={peer?.avatarId || peer?.username}
+              peerMood={peer?.mood}
               isPeerTyping={isPeerTyping}
               onSendMessage={handleSendMessage}
               onTyping={handleTyping}
+              onClose={() => setIsChatOpen(false)}
             />
           </div>
         </div>
       )}
 
-      {/* Clean Floating Bottom In-Call Dock - Monochrome */}
+      {/* Clean Floating Bottom In-Call Dock */}
       {status === 'matched' && (
-        <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-md w-[calc(100%-1.5rem)] sm:w-auto glass-panel-glow p-2 sm:p-2.5 rounded-3xl border border-white/20 shadow-2xl backdrop-blur-3xl flex items-center justify-between sm:justify-center gap-2 sm:gap-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-lg w-[calc(100%-1.5rem)] sm:w-auto glass-panel-glow p-1.5 sm:p-2 rounded-3xl border border-primary/20 shadow-2xl backdrop-blur-3xl flex items-center justify-between sm:justify-center gap-1.5 sm:gap-2 pb-[max(0.4rem,env(safe-area-inset-bottom))]">
           {/* Mute Button */}
           <button
-            onClick={toggleMute}
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
+            onClick={handleToggleMute}
+            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
               isMuted
-                ? 'bg-neutral-800 text-white border border-white/20'
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                 : 'bg-surfaceLight hover:bg-white/15 text-white border border-white/10'
             }`}
             title={isMuted ? 'Unmute' : 'Mute'}
           >
-            {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 text-white" />}
+            {isMuted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-white" />}
           </button>
 
           {/* Chat Button with Badge */}
           <button
             onClick={() => setIsChatOpen(!isChatOpen)}
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center relative transition-all active:scale-95 ${
+            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center relative transition-all active:scale-95 ${
               isChatOpen
                 ? 'bg-white text-black shadow-lg shadow-white/20'
                 : 'bg-surfaceLight hover:bg-white/15 text-neutral-200 border border-white/10'
             }`}
             title="Open In-Call Chat"
           >
-            <MessageSquare className="w-5 h-5" />
+            <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
             {messages.length > 0 && !isChatOpen && (
               <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-white text-black text-[9px] font-bold flex items-center justify-center shadow">
                 {messages.length}
@@ -717,46 +881,59 @@ function MatchPageContent() {
             )}
           </button>
 
+          {/* In-Call Games Launcher Button */}
+          <button
+            onClick={() => setIsGameMenuOpen(!isGameMenuOpen)}
+            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
+              isGameMenuOpen
+                ? 'bg-gradient-to-tr from-primary to-secondary text-white shadow-lg shadow-primary/30 scale-105'
+                : 'bg-surfaceLight hover:bg-white/15 text-neutral-200 border border-white/10'
+            }`}
+            title="Play In-Call Mini-Games (Tic-Tac-Toe, Trivia, Would You Rather)"
+          >
+            <Gamepad2 className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
+
           {/* Next Match Button (Primary & Prominent - White Button with Black Text) */}
           <button
             onClick={handleNextMatch}
-            className="flex-1 sm:flex-initial h-12 min-w-[130px] px-5 rounded-2xl bg-white text-black text-xs sm:text-sm font-bold shadow-xl shadow-white/20 hover:bg-neutral-200 hover:scale-[1.03] active:scale-[0.97] transition-all flex items-center justify-center gap-2"
+            className="flex-1 sm:flex-initial h-10 sm:h-11 min-w-[110px] sm:min-w-[130px] px-3.5 sm:px-5 rounded-2xl bg-white text-black text-xs sm:text-sm font-bold shadow-xl shadow-white/20 hover:bg-neutral-200 hover:scale-[1.03] active:scale-[0.97] transition-all flex items-center justify-center gap-1.5 sm:gap-2"
             title="Find Next Match"
           >
-            <SkipForward className="w-4 h-4 text-black" />
-            <span>Next Match</span>
+            <SkipForward className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black" />
+            <span>Next</span>
           </button>
 
           {/* Add Friend Button */}
           <button
             onClick={handleSendFriendRequest}
             disabled={friendRequested}
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
+            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
               friendRequested
                 ? 'bg-white/20 text-white border border-white/40'
                 : 'bg-surfaceLight hover:bg-white/15 text-white border border-white/10'
             }`}
             title={friendRequested ? 'Friend Added' : 'Add Friend'}
           >
-            <UserPlus className="w-5 h-5 text-white" />
+            <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </button>
 
           {/* Safety / Report Button */}
           <button
             onClick={() => setIsSafetyOpen(true)}
-            className="w-12 h-12 rounded-2xl bg-surfaceLight hover:bg-white/15 text-neutral-400 hover:text-white border border-white/10 flex items-center justify-center transition-all active:scale-95"
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-surfaceLight hover:bg-white/15 text-neutral-400 hover:text-white border border-white/10 flex items-center justify-center transition-all active:scale-95"
             title="Safety & Moderation"
           >
-            <ShieldAlert className="w-5 h-5" />
+            <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
 
           {/* End Call Button */}
           <button
             onClick={handleLeaveCall}
-            className="w-12 h-12 rounded-2xl bg-neutral-900 hover:bg-red-600 border border-white/20 hover:border-red-500 text-white shadow-lg flex items-center justify-center transition-all active:scale-95 ml-auto sm:ml-0"
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-neutral-900 hover:bg-red-600 border border-white/20 hover:border-red-500 text-white shadow-lg flex items-center justify-center transition-all active:scale-95"
             title="End Conversation"
           >
-            <PhoneOff className="w-5 h-5" />
+            <PhoneOff className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
       )}
@@ -791,6 +968,7 @@ function MatchPageContent() {
       {/* Synchronized Multiplayer Game Modal */}
       <GameOverlay
         currentUserId={user?.id || ''}
+        peerName={peer?.username || 'Partner'}
         onSendAction={(actionType, gameType, data) =>
           socketClient.sendGameAction(actionType, gameType, data)
         }

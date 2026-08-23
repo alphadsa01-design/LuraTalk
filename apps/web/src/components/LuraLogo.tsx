@@ -32,10 +32,10 @@ export default function LuraLogo({
       {/* Sleek LuraTalk Vector Icon */}
       <div className={`relative ${iconSizes[size]} shrink-0`}>
         {/* Ambient Glow */}
-        <div className="absolute inset-0 rounded-2xl bg-primary/25 opacity-75 blur-md group-hover:opacity-100 group-hover:blur-lg transition-all duration-300" />
+        <div className="absolute inset-0 rounded-2xl bg-white/10 opacity-75 blur-md group-hover:opacity-100 group-hover:blur-lg transition-all duration-300" />
 
         {/* Icon Container */}
-        <div className="relative w-full h-full rounded-2xl bg-surfaceLight p-0.5 shadow-xl flex items-center justify-center overflow-hidden border border-primary/30 group-hover:scale-105 transition-transform duration-300">
+        <div className="relative w-full h-full rounded-2xl bg-zinc-950 p-0.5 shadow-xl flex items-center justify-center overflow-hidden border border-white/20 group-hover:scale-105 transition-transform duration-300">
           <svg
             viewBox="0 0 40 40"
             fill="none"
@@ -43,17 +43,17 @@ export default function LuraLogo({
             className="w-[85%] h-[85%] drop-shadow-md"
           >
             {/* Background Dark Inset */}
-            <rect width="40" height="40" rx="10" fill="#08090E" fillOpacity="0.95" />
+            <rect width="40" height="40" rx="10" fill="#050505" />
 
             {/* Glowing Sound Waveform "L" Icon */}
             <defs>
               <linearGradient id="luraGrad" x1="4" y1="4" x2="36" y2="36" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="#8B5CF6" />
-                <stop offset="100%" stopColor="#06B6D4" />
+                <stop offset="0%" stopColor="#FFFFFF" />
+                <stop offset="100%" stopColor="#A1A1AA" />
               </linearGradient>
               <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#A78BFA" />
-                <stop offset="100%" stopColor="#06B6D4" />
+                <stop offset="0%" stopColor="#FFFFFF" />
+                <stop offset="100%" stopColor="#71717A" />
               </linearGradient>
             </defs>
 

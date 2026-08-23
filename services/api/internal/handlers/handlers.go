@@ -288,26 +288,60 @@ func (h *Handler) GetFriends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var friendships []models.Friendship
-	database.DB.Preload("Friend").Where("user_id = ? AND status = 'accepted'", user.ID).Find(&friendships)
-
 	type FriendResponse struct {
-		ID       uuid.UUID         `json:"id"`
-		Friend   models.UserPublic `json:"friend"`
-		Status   string            `json:"status"`
-		IsOnline bool              `json:"isOnline"`
+		ID         uuid.UUID         `json:"id"`
+		Friend     models.UserPublic `json:"friend"`
+		Status     string            `json:"status"`
+		IsOnline   bool              `json:"isOnline"`
+		IsIncoming bool              `json:"isIncoming"`
 	}
 
 	var res []FriendResponse
-	for _, f := range friendships {
+
+	// 1. Accepted Friends
+	var accepted []models.Friendship
+	database.DB.Preload("Friend").Where("user_id = ? AND status = 'accepted'", user.ID).Find(&accepted)
+	for _, f := range accepted {
 		if f.Friend != nil {
 			isOnline := h.Hub.IsUserOnline(f.Friend.ID.String())
-
 			res = append(res, FriendResponse{
-				ID:       f.ID,
-				Friend:   f.Friend.ToPublic(),
-				Status:   f.Status,
-				IsOnline: isOnline,
+				ID:         f.ID,
+				Friend:     f.Friend.ToPublic(),
+				Status:     "accepted",
+				IsOnline:   isOnline,
+				IsIncoming: false,
+			})
+		}
+	}
+
+	// 2. Incoming Pending Requests (others sent to this user)
+	var incoming []models.Friendship
+	database.DB.Preload("User").Where("friend_id = ? AND status = 'pending'", user.ID).Find(&incoming)
+	for _, f := range incoming {
+		if f.User != nil {
+			isOnline := h.Hub.IsUserOnline(f.User.ID.String())
+			res = append(res, FriendResponse{
+				ID:         f.ID,
+				Friend:     f.User.ToPublic(),
+				Status:     "pending",
+				IsOnline:   isOnline,
+				IsIncoming: true,
+			})
+		}
+	}
+
+	// 3. Outgoing Pending Requests (this user sent to others)
+	var outgoing []models.Friendship
+	database.DB.Preload("Friend").Where("user_id = ? AND status = 'pending'", user.ID).Find(&outgoing)
+	for _, f := range outgoing {
+		if f.Friend != nil {
+			isOnline := h.Hub.IsUserOnline(f.Friend.ID.String())
+			res = append(res, FriendResponse{
+				ID:         f.ID,
+				Friend:     f.Friend.ToPublic(),
+				Status:     "pending",
+				IsOnline:   isOnline,
+				IsIncoming: false,
 			})
 		}
 	}
@@ -334,7 +368,7 @@ func (h *Handler) AddFriend(w http.ResponseWriter, r *http.Request) {
 
 	var targetUser models.User
 	if body.FriendID != "" {
-		targetUUID, err := uuid.Parse(body.FriendID)
+		targetUUID, err := uuid.Parse(strings.TrimSpace(body.FriendID))
 		if err != nil {
 			http.Error(w, "Invalid friend ID format", http.StatusBadRequest)
 			return
@@ -344,9 +378,18 @@ func (h *Handler) AddFriend(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if body.FriendUsername != "" {
-		if err := database.DB.First(&targetUser, "LOWER(username) = LOWER(?)", strings.TrimSpace(body.FriendUsername)).Error; err != nil {
-			http.Error(w, "User not found with that username", http.StatusNotFound)
-			return
+		trimmed := strings.TrimSpace(body.FriendUsername)
+		parsedUUID, parseErr := uuid.Parse(trimmed)
+		if parseErr == nil {
+			if err := database.DB.First(&targetUser, "id = ?", parsedUUID).Error; err != nil {
+				http.Error(w, "User not found with that ID", http.StatusNotFound)
+				return
+			}
+		} else {
+			if err := database.DB.First(&targetUser, "LOWER(username) = LOWER(?)", trimmed).Error; err != nil {
+				http.Error(w, "User not found with that username", http.StatusNotFound)
+				return
+			}
 		}
 	} else {
 		http.Error(w, "Username or Friend ID required", http.StatusBadRequest)
@@ -516,24 +559,40 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 
 		var partnerUser models.User
 		if err := database.DB.First(&partnerUser, "id = ?", otherParticipant.UserID).Error; err != nil {
-			continue
+			partnerUser = models.User{
+				ID:          otherParticipant.UserID,
+				Username:    "Anonymous Partner",
+				AvatarID:    "aura_1",
+				IsAnonymous: true,
+			}
 		}
 
 		isOnline := h.Hub.IsUserOnline(partnerUser.ID.String())
 
-		// Check if friendship exists
-		var friendshipCount int64
-		database.DB.Model(&models.Friendship{}).Where("user_id = ? AND friend_id = ? AND status = 'accepted'", user.ID, partnerUser.ID).Count(&friendshipCount)
+		// Check if friendship exists (accepted or pending)
+		var friendship models.Friendship
+		isFriend := false
+		if err := database.DB.Where("user_id = ? AND friend_id = ? AND status = 'accepted'", user.ID, partnerUser.ID).First(&friendship).Error; err == nil {
+			isFriend = true
+		}
+
+		duration := conv.DurationSeconds
+		if duration <= 0 && conv.EndedAt != nil {
+			duration = int(conv.EndedAt.Sub(conv.CreatedAt).Seconds())
+			if duration < 0 {
+				duration = 0
+			}
+		}
 
 		results = append(results, HistoryItem{
 			ID:              p.ID,
 			ConversationID:  conv.ID,
 			RoomName:        conv.RoomName,
-			DurationSeconds: conv.DurationSeconds,
+			DurationSeconds: duration,
 			CreatedAt:       conv.CreatedAt,
 			Partner:         partnerUser.ToPublic(),
 			IsPartnerOnline: isOnline,
-			IsFriend:        friendshipCount > 0,
+			IsFriend:        isFriend,
 		})
 	}
 
@@ -663,6 +722,7 @@ func (h *Handler) GetAdminStats(w http.ResponseWriter, r *http.Request) {
 		"totalBlocksRecorded":    totalBlocks,
 		"securityRatesPerMinute": rates,
 		"securityAlerts":         alerts,
+		"systemLogs":             telemetry.Monitor.GetSystemLogs(),
 		"rooms":                  rooms,
 		"timestamp":              time.Now().UnixMilli(),
 	}

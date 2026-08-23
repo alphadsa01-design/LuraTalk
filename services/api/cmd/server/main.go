@@ -179,6 +179,31 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Render Self-Ping Keep-Alive Worker (prevents free instance from sleeping)
+	go func() {
+		targetURL := os.Getenv("RENDER_EXTERNAL_URL")
+		if targetURL == "" {
+			targetURL = os.Getenv("KEEP_ALIVE_URL")
+		}
+		if targetURL != "" {
+			healthEndpoint := fmt.Sprintf("%s/health", targetURL)
+			log.Printf("[KeepAlive] Auto self-ping worker activated for %s (pings every 10m)", healthEndpoint)
+			ticker := time.NewTicker(10 * time.Minute)
+			defer ticker.Stop()
+			client := &http.Client{Timeout: 10 * time.Second}
+
+			for range ticker.C {
+				resp, err := client.Get(healthEndpoint)
+				if err != nil {
+					log.Printf("[KeepAlive] Warning: Self-ping failed: %v", err)
+				} else {
+					resp.Body.Close()
+					log.Printf("[KeepAlive] Self-ping successful (status: %d)", resp.StatusCode)
+				}
+			}
+		}
+	}()
+
 	go func() {
 		log.Printf("AuraVoice API listening at http://localhost:%s", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

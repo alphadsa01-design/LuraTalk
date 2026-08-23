@@ -41,8 +41,6 @@ import {
   fetchAdminStats,
   fetchAdminReports,
   actionAdminReport,
-  adminCreateRoom,
-  adminDeleteRoom,
   adminRevokeUser,
 } from '@/lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -51,10 +49,9 @@ export default function AdminPage() {
   const [mounted, setMounted] = useState(false);
   const [adminKey, setAdminKey] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'telemetry' | 'moderation' | 'rooms' | 'analytics' | 'logs'>('telemetry');
+  const [activeTab, setActiveTab] = useState<'telemetry' | 'moderation' | 'analytics' | 'logs'>('telemetry');
   const [stats, setStats] = useState<any>(null);
   const [reports, setReports] = useState<any[]>([]);
-  const [rooms, setRooms] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -90,23 +87,8 @@ export default function AdminPage() {
   const [pingLatency, setPingLatency] = useState<number | null>(null);
   const [isPinging, setIsPinging] = useState(false);
 
-  // New room modal state
-  const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
-  const [newRoomTitle, setNewRoomTitle] = useState('');
-  const [newRoomTopic, setNewRoomTopic] = useState('Gaming');
-  const [newRoomDesc, setNewRoomDesc] = useState('');
-  const [newRoomCapacity, setNewRoomCapacity] = useState(12);
-  const [newRoomTags, setNewRoomTags] = useState('gaming, chill, voice');
-
-  // Simulated live system logs
-  const [systemLogs, setSystemLogs] = useState([
-    { id: 1, type: 'MATCH', text: 'Atomic queue pair #9041 matched in 138ms [Jaccard 0.82]', time: 'Just now', level: 'info' },
-    { id: 2, type: 'LIVEKIT', text: 'SFU room aura-call-81a2 initialized (Opus 48kHz, stereo DTX)', time: '4s ago', level: 'info' },
-    { id: 3, type: 'SEC', text: 'Sanitizer stripped 2 external URLs from in-call text channel', time: '18s ago', level: 'warn' },
-    { id: 4, type: 'WS', text: 'Gorilla hub client ping-pong latency 12.4ms (Cluster us-east)', time: '32s ago', level: 'info' },
-    { id: 5, type: 'MATCH', text: 'Mystery level 3 full-identity reveal unlocked for pair #8920', time: '1m ago', level: 'success' },
-    { id: 6, type: 'LIVEKIT', text: 'Adaptive bitrate adjusted to 32kbps for high jitter peer', time: '2m ago', level: 'info' },
-  ]);
+  // Real live system logs from Go backend
+  const [systemLogs, setSystemLogs] = useState<any[]>([]);
 
   const loadData = async (key: string) => {
     setLoading(true);
@@ -116,7 +98,9 @@ export default function AdminPage() {
       const reportsData = await fetchAdminReports(key);
       setStats(statsData);
       setReports(reportsData || []);
-      setRooms(statsData?.rooms || []);
+      if (statsData?.systemLogs) {
+        setSystemLogs(statsData.systemLogs);
+      }
       setIsAuthenticated(true);
     } catch (err: any) {
       setError('Invalid admin master key or permission denied.');
@@ -130,13 +114,20 @@ export default function AdminPage() {
     await loadData(adminKey);
   };
 
-  const handleRunPing = () => {
+  const handleRunPing = async () => {
     setIsPinging(true);
-    setTimeout(() => {
-      const ping = Math.floor(12 + Math.random() * 8);
-      setPingLatency(ping);
+    const start = performance.now();
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      await fetch(`${API_URL}/health`, { method: 'GET', cache: 'no-store' });
+      const duration = Math.round(performance.now() - start);
+      setPingLatency(duration);
+    } catch {
+      const duration = Math.round(performance.now() - start);
+      setPingLatency(duration || 1);
+    } finally {
       setIsPinging(false);
-    }, 600);
+    }
   };
 
   const handleActionReport = async (reportId: string, action: string) => {
@@ -160,37 +151,6 @@ export default function AdminPage() {
     }
   };
 
-  const handleDeleteRoom = async (roomId: string) => {
-    try {
-      await adminDeleteRoom(adminKey, roomId);
-      setRooms(rooms.filter((r) => r.id !== roomId));
-      showToast('Voice stage closed successfully.');
-    } catch (err) {
-      console.error('Failed to delete room', err);
-    }
-  };
-
-  const handleCreateRoom = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newRoomTitle.trim()) return;
-    try {
-      const created = await adminCreateRoom(adminKey, {
-        title: newRoomTitle.trim(),
-        topic: newRoomTopic,
-        description: newRoomDesc.trim(),
-        maxParticipants: newRoomCapacity,
-        tags: newRoomTags.split(',').map((t) => t.trim().toLowerCase()),
-      });
-      setRooms([created, ...rooms]);
-      setIsCreateRoomOpen(false);
-      setNewRoomTitle('');
-      setNewRoomDesc('');
-      showToast('Official Voice Lounge published live!');
-    } catch (err) {
-      console.error('Failed to create room', err);
-    }
-  };
-
   const showToast = (msg: string) => {
     setActionSuccess(msg);
     setTimeout(() => setActionSuccess(null), 3000);
@@ -208,16 +168,6 @@ export default function AdminPage() {
       return matchSearch && matchFilter;
     });
   }, [reports, searchQuery, moderationFilter]);
-
-  // Filtered rooms
-  const filteredRooms = useMemo(() => {
-    return rooms.filter(
-      (r) =>
-        r.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.topic?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.tags?.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
-  }, [rooms, searchQuery]);
 
   // Filtered logs
   const filteredLogs = useMemo(() => {
@@ -242,7 +192,7 @@ export default function AdminPage() {
 
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-[11px] font-bold text-rose-400 mb-3">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>AuraVoice Security Center</span>
+            <span>LuraTalk Security Center</span>
           </div>
 
           <h2 className="text-2xl font-extrabold text-white tracking-tight">Mission Control Access</h2>
@@ -357,7 +307,6 @@ export default function AdminPage() {
         {[
           { id: 'telemetry', label: 'Telemetry & SLAs', icon: Activity, badge: 'P95 14ms' },
           { id: 'moderation', label: 'Moderation Queue', icon: AlertTriangle, badge: reports.length },
-          { id: 'rooms', label: 'Voice Lounges', icon: Compass, badge: rooms.length },
           { id: 'analytics', label: 'Event Stream', icon: Zap, badge: 'Live' },
           { id: 'logs', label: 'System Logs', icon: Terminal, badge: 'Stream' },
         ].map((tab) => {
@@ -717,91 +666,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* TAB 3: ROOM MANAGEMENT */}
-      {activeTab === 'rooms' && (
-        <div className="glass-panel rounded-3xl p-6 sm:p-8 border border-white/10 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/5">
-            <div>
-              <h3 className="text-lg font-bold text-white">Community Lounges &amp; Voice Stages</h3>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Inspect active room stages, participant capacity, and publish official topics.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Filter lounges by topic..."
-                  className="pl-8 pr-3 py-1.5 rounded-xl bg-surfaceLight border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-secondary w-44 sm:w-56"
-                />
-              </div>
-
-              <button
-                onClick={() => setIsCreateRoomOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-primary via-indigo-500 to-secondary text-white text-xs font-bold shadow-lg shadow-primary/25 hover:scale-105 transition-transform"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Create Stage</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredRooms.map((r) => {
-              const occupancy = Math.round(((r.currentParticipants || 1) / r.maxParticipants) * 100);
-              return (
-                <div
-                  key={r.id}
-                  className="glass-card rounded-2xl p-5 border border-white/10 flex flex-col justify-between group hover:border-primary/40 transition-colors"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="px-3 py-1 rounded-full bg-primary/20 text-primary-hover border border-primary/30 text-[11px] font-bold">
-                        {r.topic}
-                      </span>
-                      <span className="text-xs font-semibold text-emerald-400">
-                        {r.currentParticipants || 1}/{r.maxParticipants} Active
-                      </span>
-                    </div>
-
-                    <h4 className="text-base font-bold text-white group-hover:text-cyan-300 transition-colors">
-                      {r.title}
-                    </h4>
-                    <p className="text-xs text-gray-400 mt-1.5 line-clamp-2 leading-relaxed">
-                      {r.description}
-                    </p>
-
-                    {/* Tags */}
-                    <div className="flex flex-wrap gap-1 mt-3">
-                      {r.tags?.map((t: string) => (
-                        <span key={t} className="px-2 py-0.5 rounded-md bg-surfaceLight text-[10px] text-gray-400">
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="mt-5 pt-3 border-t border-white/5 flex items-center justify-between">
-                    <span className="text-[10px] text-gray-500 font-mono">LiveKit SFU</span>
-                    <button
-                      onClick={() => handleDeleteRoom(r.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30 text-xs font-semibold transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Close Stage</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* TAB 4: LIVE ANALYTICS EVENT STREAM */}
       {activeTab === 'analytics' && stats && (
         <div className="glass-panel rounded-3xl p-6 sm:p-8 border border-white/10 space-y-6">
@@ -859,30 +723,28 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* TAB 5: SYSTEM LOGS CONSOLE */}
+      {/* TAB 5: REAL-TIME SYSTEM LOGS STREAM */}
       {activeTab === 'logs' && (
-        <div className="glass-panel rounded-3xl p-6 sm:p-8 border border-white/10 space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-white/5">
+        <div className="glass-panel rounded-3xl p-6 sm:p-8 border border-white/10 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/5">
             <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-emerald-400" />
-                <span>Cluster System &amp; Security Stream</span>
-              </h3>
-              <p className="text-xs text-gray-400">Live operational events from Go monolithic service and LiveKit SFU.</p>
+              <h3 className="text-lg font-bold text-white">System Diagnostics &amp; Real-time Event Stream</h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Inspect raw connection handshakes, ICE candidates, WebRTC signaling events, and security tokens.
+              </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            {/* Log filter pills */}
+            <div className="flex items-center gap-1.5 p-1 bg-surfaceLight rounded-xl border border-white/5">
               {(['all', 'MATCH', 'LIVEKIT', 'SEC', 'WS'] as const).map((filter) => (
                 <button
                   key={filter}
                   onClick={() => setLogFilter(filter)}
-                  className={`px-3 py-1 rounded-xl text-xs font-mono font-bold transition-all ${
-                    logFilter === filter
-                      ? 'bg-secondary text-white shadow-sm'
-                      : 'bg-surfaceLight text-gray-400 hover:text-white'
+                  className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
+                    logFilter === filter ? 'bg-primary text-white shadow-sm' : 'text-gray-400 hover:text-white'
                   }`}
                 >
-                  [{filter}]
+                  {filter}
                 </button>
               ))}
             </div>
@@ -911,125 +773,6 @@ export default function AdminPage() {
           </div>
         </div>
       )}
-
-      {/* Create Official Room Modal */}
-      <AnimatePresence>
-        {isCreateRoomOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-lg glass-panel-glow rounded-3xl p-6 sm:p-8 border border-primary/40 relative shadow-2xl"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-5">
-                <div className="flex items-center gap-2">
-                  <Compass className="w-5 h-5 text-secondary" />
-                  <h3 className="text-lg font-bold text-white">Create Official Voice Lounge</h3>
-                </div>
-                <button
-                  onClick={() => setIsCreateRoomOpen(false)}
-                  className="p-1 rounded-full text-gray-400 hover:text-white hover:bg-white/10"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleCreateRoom} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-1.5">
-                    Lounge Stage Title
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newRoomTitle}
-                    onChange={(e) => setNewRoomTitle(e.target.value)}
-                    placeholder="e.g. 🎧 Lo-Fi Chill &amp; Deep Conversations"
-                    className="w-full bg-surfaceLight border border-white/10 rounded-2xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/30"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-1.5">
-                      Category
-                    </label>
-                    <select
-                      value={newRoomTopic}
-                      onChange={(e) => setNewRoomTopic(e.target.value)}
-                      className="w-full bg-surfaceLight border border-white/10 rounded-2xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-secondary"
-                    >
-                      <option value="Gaming">Gaming</option>
-                      <option value="Language">Language</option>
-                      <option value="Deep Conversations">Deep Conversations</option>
-                      <option value="Music">Music</option>
-                      <option value="Technology">Technology</option>
-                      <option value="Movies">Movies</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-1.5">
-                      Capacity
-                    </label>
-                    <input
-                      type="number"
-                      min={2}
-                      max={50}
-                      value={newRoomCapacity}
-                      onChange={(e) => setNewRoomCapacity(Number(e.target.value))}
-                      className="w-full bg-surfaceLight border border-white/10 rounded-2xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-secondary"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-1.5">
-                    Stage Description
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={newRoomDesc}
-                    onChange={(e) => setNewRoomDesc(e.target.value)}
-                    placeholder="Topic guidelines and conversation focus..."
-                    className="w-full bg-surfaceLight border border-white/10 rounded-2xl p-3.5 text-xs text-white focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/30"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-1.5">
-                    Tags (Comma-separated)
-                  </label>
-                  <input
-                    type="text"
-                    value={newRoomTags}
-                    onChange={(e) => setNewRoomTags(e.target.value)}
-                    placeholder="lo-fi, chill, coding"
-                    className="w-full bg-surfaceLight border border-white/10 rounded-2xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-secondary"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-3 pt-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsCreateRoomOpen(false)}
-                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-gray-400 hover:text-white"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-xs font-bold shadow-lg shadow-primary/30 hover:scale-105 transition-transform"
-                  >
-                    Publish Stage Live
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
