@@ -64,7 +64,7 @@ export default function AIWidget({
       </div>
 
       <p className="mt-2 text-xs sm:text-sm text-gray-200 font-medium leading-snug">
-        💡 "{suggestion}"
+        "{suggestion}"
       </p>
 
       <div className="mt-3 flex items-center justify-end gap-2">

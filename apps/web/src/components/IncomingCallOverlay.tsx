@@ -173,7 +173,7 @@ export default function IncomingCallOverlay() {
               {/* Accept Call */}
               <button
                 onClick={handleAccept}
-                className="flex items-center gap-1 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs shadow-lg shadow-emerald-500/30 active:scale-95 transition-all"
+                className="flex items-center gap-1 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-transparent hover:bg-emerald-500/15 text-emerald-300 border-2 border-emerald-400 hover:border-emerald-300 font-bold text-xs active:scale-95 transition-all"
                 title="Accept Call"
               >
                 <Phone className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current" />
@@ -183,7 +183,7 @@ export default function IncomingCallOverlay() {
               {/* Reject Call */}
               <button
                 onClick={handleReject}
-                className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-bold active:scale-95 transition-all"
+                className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-transparent hover:bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:border-rose-400 text-xs font-bold active:scale-95 transition-all"
                 title="Decline Call"
               >
                 <PhoneOff className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -192,7 +192,7 @@ export default function IncomingCallOverlay() {
               {/* Block Caller */}
               <button
                 onClick={handleBlock}
-                className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-white/5 hover:bg-rose-900/40 text-gray-400 hover:text-rose-300 border border-white/10 text-xs font-bold active:scale-95 transition-all"
+                className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-transparent hover:bg-white/10 text-gray-400 hover:text-white border border-white/20 text-xs font-bold active:scale-95 transition-all"
                 title="Block User"
               >
                 <ShieldAlert className="w-3.5 h-3.5 sm:w-4 sm:h-4" />

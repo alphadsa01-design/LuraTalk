@@ -12,8 +12,6 @@ interface AudioVisualizerProps {
   isDeafened: boolean;
   peerName: string;
   peerAvatar: string;
-  sharedInterestsCount?: number;
-  sharedInterests?: string[];
   onEndCall?: () => void;
   onOpenGames?: () => void;
 }
@@ -25,13 +23,10 @@ export default function AudioVisualizer({
   isDeafened,
   peerName,
   peerAvatar,
-  sharedInterestsCount = 0,
-  sharedInterests = [],
   onEndCall,
   onOpenGames,
 }: AudioVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const count = (sharedInterests && sharedInterests.length > 0) ? sharedInterests.length : sharedInterestsCount;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -108,13 +103,7 @@ export default function AudioVisualizer({
         className="absolute inset-0 w-full h-full pointer-events-none opacity-80"
       />
 
-      {/* Top Left Shared Vibe Info Pill */}
-      {count > 0 && (
-        <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-10 flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] text-white font-medium backdrop-blur-md shadow-sm">
-          <Sparkles className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
-          <span>{count} Shared {count === 1 ? 'Interest' : 'Interests'}</span>
-        </div>
-      )}
+
 
       {/* Top Right Quick Games Trigger Pill */}
       {onOpenGames && (
@@ -179,28 +168,13 @@ export default function AudioVisualizer({
         </h3>
         <p className="text-xs text-neutral-400 mt-0.5">
           {peerSpeaking ? (
-            <span className="text-emerald-400 font-medium animate-pulse">● Speaking...</span>
+            <span className="text-emerald-400 font-medium animate-pulse">Speaking...</span>
           ) : isSpeaking ? (
             <span className="text-purple-300 font-medium">Listening to you</span>
           ) : (
             <span className="text-neutral-400">Connected</span>
           )}
         </p>
-
-        {/* Matched Shared Interests Pills */}
-        {sharedInterests && sharedInterests.length > 0 && (
-          <div className="flex flex-wrap items-center justify-center gap-1.5 mt-3 max-w-sm px-2">
-            {sharedInterests.map((interest) => (
-              <span
-                key={interest}
-                className="px-2.5 py-0.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[10px] font-medium text-white/90 capitalize shadow-sm backdrop-blur-md transition-all flex items-center gap-1"
-              >
-                <span className="text-cyan-300">•</span>
-                <span>{interest}</span>
-              </span>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

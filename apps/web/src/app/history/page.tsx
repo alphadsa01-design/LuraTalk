@@ -225,7 +225,7 @@ export default function HistoryPage() {
 
         <Link
           href="/match?mode=voice"
-          className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-primary to-secondary text-white text-xs font-bold shadow-lg shadow-primary/25 hover:scale-105 transition-all self-start sm:self-center"
+          className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-transparent hover:bg-white/10 text-white text-xs font-bold border border-white/40 hover:border-white transition-all self-start sm:self-center"
         >
           <Radio className="w-4 h-4" />
           <span>New Voice Match</span>
@@ -236,30 +236,30 @@ export default function HistoryPage() {
       <div className="flex items-center gap-2 mb-6 border-b border-white/10 pb-4 overflow-x-auto">
         <button
           onClick={() => setFilter('all')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-transparent ${
             filter === 'all'
-              ? 'bg-white/15 text-white shadow-sm border border-white/10'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'text-white border border-white/40'
+              : 'text-gray-400 hover:text-white border border-transparent hover:border-white/10'
           }`}
         >
           All Calls ({history.length})
         </button>
         <button
           onClick={() => setFilter('today')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-transparent ${
             filter === 'today'
-              ? 'bg-white/15 text-white shadow-sm border border-white/10'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'text-white border border-white/40'
+              : 'text-gray-400 hover:text-white border border-transparent hover:border-white/10'
           }`}
         >
           Today ({history.filter((h) => isToday(h.createdAt)).length})
         </button>
         <button
           onClick={() => setFilter('long')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-transparent ${
             filter === 'long'
-              ? 'bg-white/15 text-white shadow-sm border border-white/10'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'text-white border border-white/40'
+              : 'text-gray-400 hover:text-white border border-transparent hover:border-white/10'
           }`}
         >
           Long Conversations (&gt;2m) ({history.filter((h) => h.durationSeconds >= 120).length})
@@ -379,7 +379,7 @@ export default function HistoryPage() {
                   <button
                     onClick={() => handleCallBack(item)}
                     disabled={callingId === item.id}
-                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm active:scale-95"
+                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-xl bg-transparent hover:bg-emerald-500/15 text-emerald-300 border border-emerald-400 text-xs font-bold transition-all active:scale-95"
                     title="Call back this user"
                   >
                     <PhoneCall className="w-3.5 h-3.5 text-emerald-400" />
@@ -389,7 +389,7 @@ export default function HistoryPage() {
                   {!item.isFriend && (
                     <button
                       onClick={() => handleAddFriend(item.partner.id)}
-                      className="p-2.5 sm:p-2 rounded-xl bg-surfaceLight hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs font-bold transition-all"
+                      className="p-2.5 sm:p-2 rounded-xl bg-transparent hover:bg-white/10 text-gray-300 hover:text-white border border-white/20 text-xs font-bold transition-all"
                       title="Add to Friends"
                     >
                       <UserPlus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
@@ -398,7 +398,7 @@ export default function HistoryPage() {
 
                   <button
                     onClick={() => handleDelete(item.id)}
-                    className="p-2.5 sm:p-2 rounded-xl bg-surfaceLight hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-white/10 hover:border-rose-500/30 text-xs font-bold transition-all"
+                    className="p-2.5 sm:p-2 rounded-xl bg-transparent hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-white/20 hover:border-rose-400 text-xs font-bold transition-all"
                     title="Remove from history"
                   >
                     <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />

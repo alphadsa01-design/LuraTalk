@@ -85,19 +85,19 @@ export default function SafetyModal({
         ) : (
           <div className="mt-4">
             {/* Tabs */}
-            <div className="flex items-center gap-2 p-1 rounded-xl bg-surfaceLight border border-white/10 mb-4">
+            <div className="flex items-center gap-2 p-1 rounded-xl bg-transparent border border-white/10 mb-4">
               <button
                 onClick={() => setTab('report')}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  tab === 'report' ? 'bg-rose-500 text-white shadow-md' : 'text-gray-400 hover:text-white'
+                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all bg-transparent ${
+                  tab === 'report' ? 'border border-rose-400 text-rose-300' : 'text-gray-400 hover:text-white'
                 }`}
               >
                 Report User
               </button>
               <button
                 onClick={() => setTab('block')}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  tab === 'block' ? 'bg-rose-500 text-white shadow-md' : 'text-gray-400 hover:text-white'
+                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all bg-transparent ${
+                  tab === 'block' ? 'border border-rose-400 text-rose-300' : 'text-gray-400 hover:text-white'
                 }`}
               >
                 Block User
@@ -141,21 +141,21 @@ export default function SafetyModal({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-400 hover:text-white"
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-400 hover:text-white border border-white/10 hover:border-white/30"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-md shadow-rose-500/25"
+                    className="px-4 py-2 rounded-xl bg-transparent hover:bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:border-rose-400 text-xs font-bold transition-all"
                   >
-                    Submit Report & Disconnect
+                    Submit Report &amp; Disconnect
                   </button>
                 </div>
               </form>
             ) : (
               <div className="space-y-4">
-                <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 flex items-start gap-2.5">
+                <div className="p-3 rounded-2xl bg-transparent border border-rose-500/30 text-xs text-rose-300 flex items-start gap-2.5">
                   <AlertTriangle className="w-5 h-5 flex-shrink-0 text-rose-400 mt-0.5" />
                   <p>
                     Blocking will immediately end this call and prevent either of you from ever
@@ -167,13 +167,13 @@ export default function SafetyModal({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-400 hover:text-white"
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-400 hover:text-white border border-white/10 hover:border-white/30"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleBlockConfirm}
-                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-md shadow-rose-600/30"
+                    className="px-4 py-2 rounded-xl bg-transparent hover:bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:border-rose-400 text-xs font-bold transition-all"
                   >
                     Block User Permanently
                   </button>

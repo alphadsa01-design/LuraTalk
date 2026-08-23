@@ -1,6 +1,7 @@
 // LuraTalk Real-Time Audio Engine: LiveKit SFU (Primary) + TURN WebRTC (Fallback)
 
 import { socketClient } from '@/lib/socket';
+import { useCallStore } from '@/stores/useCallStore';
 import { Room, RoomEvent, RemoteTrack, Track, RemoteParticipant, LocalAudioTrack } from 'livekit-client';
 
 export interface WebRTCVoiceOptions {
@@ -189,9 +190,15 @@ class LuraWebRTCEngine {
 
     await room.localParticipant.setMicrophoneEnabled(!this.isMuted);
 
-    // Only attach disconnect listener after successful connection
+    // Attach disconnect listeners for room and remote participants
     room.on(RoomEvent.Disconnected, () => {
       if (this.isCalling && this.isUsingLiveKit) {
+        options.onDisconnected?.();
+      }
+    });
+
+    room.on(RoomEvent.ParticipantDisconnected, () => {
+      if (this.isCalling) {
         options.onDisconnected?.();
       }
     });
@@ -588,6 +595,7 @@ class LuraWebRTCEngine {
 
   public cleanup() {
     this.isCalling = false;
+
     if (this.livekitRoom) {
       this.livekitRoom.disconnect().catch(() => {});
       this.livekitRoom = null;

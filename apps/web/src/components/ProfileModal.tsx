@@ -8,6 +8,7 @@ import {
   Check,
   Lock,
   Sparkles,
+  Shuffle,
 } from 'lucide-react';
 import { useUserStore, AVATAR_PRESETS, getDicebearAvatarUrl } from '@/stores/useUserStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -116,9 +117,10 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               <button
                 type="button"
                 onClick={rollNewUsername}
-                className="text-[11px] font-semibold text-secondary hover:text-secondary-hover transition-colors flex items-center gap-1"
+                className="text-[11px] font-semibold text-secondary hover:text-secondary-hover transition-colors flex items-center gap-1.5"
               >
-                🎲 Roll Random Alias
+                <Shuffle className="w-3 h-3" />
+                <span>Roll Random Alias</span>
               </button>
             </div>
             <input
@@ -165,10 +167,10 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                         addInterest(normalized);
                       }
                     }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all bg-transparent ${
                       isSelected
-                        ? 'bg-primary/30 border-primary text-white font-bold shadow-sm'
-                        : 'bg-surfaceLight border-white/5 text-gray-400 hover:text-white hover:border-white/15'
+                        ? 'border-white text-white font-bold'
+                        : 'border-white/10 text-gray-400 hover:text-white hover:border-white/30'
                     }`}
                   >
                     #{tag}
@@ -181,7 +183,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
           {/* Minimal Icebreaker Starter */}
           <div>
             <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <Sparkles className="w-3.5 h-3.5 text-white" />
               <span>Icebreaker Prompt</span>
             </label>
             <input
@@ -189,7 +191,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               value={questionAnswer}
               onChange={(e) => setQuestionAnswer(e.target.value)}
               placeholder="Where would you travel tomorrow if money didn't matter?"
-              className="w-full bg-surfaceLight border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-400 transition-colors"
+              className="w-full bg-surfaceLight border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-white/40 transition-colors"
             />
           </div>
         </div>
@@ -203,7 +205,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
           <button
             type="button"
             onClick={handleSave}
-            className="px-6 py-2 rounded-xl bg-white/15 hover:bg-white/20 border border-white/10 text-white text-xs font-bold transition-all shadow-md"
+            className="px-6 py-2 rounded-xl bg-transparent hover:bg-white/10 border border-white/40 hover:border-white text-white text-xs font-bold transition-all"
           >
             {savedSuccess ? 'Saved ✓' : 'Save Changes'}
           </button>

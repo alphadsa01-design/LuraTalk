@@ -12,24 +12,24 @@ type GameType string
 
 const (
 	GameTicTacToe       GameType = "tictactoe"
+	GameDarkQuestions   GameType = "dark_questions"
 	GameWouldYouRather  GameType = "would_you_rather"
-	GameTrivia          GameType = "trivia"
 	GameTwoTruths       GameType = "two_truths"
 	GameTwentyQuestions GameType = "twenty_questions"
 )
 
 type GameSession struct {
-	GameID       string                 `json:"gameId"`
-	RoomName     string                 `json:"roomName"`
-	GameType     GameType               `json:"gameType"`
-	Players      []string               `json:"players"`      // userIDs [player1, player2]
-	Turn         string                 `json:"turn"`         // current userID
-	Status       string                 `json:"status"`       // "in_progress", "won", "draw"
-	Winner       string                 `json:"winner,omitempty"`
-	Board        [9]string              `json:"board,omitempty"` // For Tic-Tac-Toe
-	Scores       map[string]int         `json:"scores"`
-	CustomData   map[string]interface{} `json:"customData"`
-	UpdatedAt    time.Time              `json:"updatedAt"`
+	GameID     string                 `json:"gameId"`
+	RoomName   string                 `json:"roomName"`
+	GameType   GameType               `json:"gameType"`
+	Players    []string               `json:"players"`    // userIDs [player1, player2]
+	Turn       string                 `json:"turn"`       // current userID
+	Status     string                 `json:"status"`     // "in_progress", "won", "draw"
+	Winner     string                 `json:"winner,omitempty"`
+	Board      [9]string              `json:"board"` // For Tic-Tac-Toe
+	Scores     map[string]int         `json:"scores"`
+	CustomData map[string]interface{} `json:"customData"`
+	UpdatedAt  time.Time              `json:"updatedAt"`
 }
 
 type GameManager struct {
@@ -43,41 +43,118 @@ func NewGameManager() *GameManager {
 	}
 }
 
-var wyrCards = []map[string]string{
-	{"optionA": "Travel 100 years into the future", "optionB": "Travel 100 years into the past"},
-	{"optionA": "Never have to sleep again with full energy", "optionB": "Never have to work again with unlimited funds"},
-	{"optionA": "Explore the deepest depths of the ocean", "optionB": "Explore uncharted alien planets in deep space"},
-	{"optionA": "Speak all human languages fluently", "optionB": "Speak and understand all animal languages"},
-	{"optionA": "Always know when someone is lying", "optionB": "Always get away with any harmless lie"},
-	{"optionA": "Live in a futuristic cyberpunk metropolis", "optionB": "Live in a tranquil cozy fantasy village with magic"},
+var darkQuestions = []map[string]string{
+	{
+		"category": "🔥 Dark Truths",
+		"question": "What is a secret you will take to the grave if nobody ever forces you to speak?",
+		"tag":      "Unfiltered Secret",
+	},
+	{
+		"category": "🧠 Moral Dilemma",
+		"question": "If you received $20 Million tax-free, but a random stranger somewhere dies, would you press the button?",
+		"tag":      "High Stakes",
+	},
+	{
+		"category": "💔 Secrets & Regrets",
+		"question": "Have you ever secretly felt satisfied or happy about someone else's downfall or failure?",
+		"tag":      "Guilty Confession",
+	},
+	{
+		"category": "👁️ Existential",
+		"question": "Would you rather know the exact date and time of your death, or the exact cause?",
+		"tag":      "Fate & Destiny",
+	},
+	{
+		"category": "🔥 Dark Truths",
+		"question": "What is the most manipulative thing you have ever done to get what you wanted?",
+		"tag":      "Unfiltered Truth",
+	},
+	{
+		"category": "🧠 Moral Dilemma",
+		"question": "If you could erase one person from your past as if they never existed with zero consequences, would you do it?",
+		"tag":      "Erase the Past",
+	},
+	{
+		"category": "💀 Psychology",
+		"question": "What is a toxic personality trait you know you have, but secretly kind of enjoy?",
+		"tag":      "Shadow Self",
+	},
+	{
+		"category": "💔 Secrets & Regrets",
+		"question": "Have you ever stayed with someone or pretended to care just because you were terrified of being alone?",
+		"tag":      "Raw Honesty",
+	},
+	{
+		"category": "👁️ Existential",
+		"question": "Would you rather live a 100% happy life inside a fake simulation, or endure painful truths in reality?",
+		"tag":      "Simulation vs Reality",
+	},
+	{
+		"category": "🔥 Dark Truths",
+		"question": "If everyone in your life could hear your raw, uncensored inner thoughts for 2 minutes, who would leave first?",
+		"tag":      "Mind Unlocked",
+	},
+	{
+		"category": "🧠 Moral Dilemma",
+		"question": "Would you rather betray your best friend to save your career, or ruin your career to keep their secret safe?",
+		"tag":      "Loyalty Test",
+	},
+	{
+		"category": "💀 Psychology",
+		"question": "What is something you did in your past that still occasionally haunts you when you try to sleep at night?",
+		"tag":      "Midnight Thoughts",
+	},
+	{
+		"category": "🔥 Dark Truths",
+		"question": "Have you ever ghosted someone who genuinely loved or cared for you, knowing it would break them?",
+		"tag":      "Hard Truth",
+	},
+	{
+		"category": "👁️ Existential",
+		"question": "If you died tonight, what is the single file, item, or chat on your phone you would pray nobody ever discovers?",
+		"tag":      "Digital Graveyard",
+	},
+	{
+		"category": "🧠 Moral Dilemma",
+		"question": "If you had 24 hours where absolutely nothing you did had legal or social consequences, what would you honestly do?",
+		"tag":      "The Purge Rule",
+	},
+	{
+		"category": "💔 Secrets & Regrets",
+		"question": "What was the exact moment in your life where you realized you had lost your childhood innocence?",
+		"tag":      "Turning Point",
+	},
+	{
+		"category": "💀 Psychology",
+		"question": "Do you believe humans are fundamentally selfish and good only when watched, or inherently compassionate?",
+		"tag":      "Human Nature",
+	},
+	{
+		"category": "🔥 Dark Truths",
+		"question": "What is a lie you told that spiraled so out of control that you had to create a completely fake backstory?",
+		"tag":      "Deep Web of Lies",
+	},
+	{
+		"category": "🧠 Moral Dilemma",
+		"question": "Would you rather be universally loved for a fake persona, or hated by everyone for who you truly are?",
+		"tag":      "Authenticity vs Acceptance",
+	},
+	{
+		"category": "👁️ Existential",
+		"question": "If you found out tomorrow that your entire life up to this second was an elaborate psychological experiment, what is your next move?",
+		"tag":      "The Truman Effect",
+	},
 }
 
-var triviaQuestions = []map[string]interface{}{
-	{
-		"question": "Which planet in our solar system spins clockwise (retrograde rotation)?",
-		"options":  []string{"Venus", "Mars", "Jupiter", "Neptune"},
-		"answer":   0,
-	},
-	{
-		"question": "What is the fastest land animal in the world?",
-		"options":  []string{"Cheetah", "Pronghorn Antelope", "Lion", "Peregrine Falcon"},
-		"answer":   0,
-	},
-	{
-		"question": "In computer science, what does 'HTTP' stand for?",
-		"options":  []string{"HyperText Transfer Protocol", "High Time Transfer Port", "Hyperlink Transit Program", "Host Text Transmission Process"},
-		"answer":   0,
-	},
-	{
-		"question": "Which programming language was created by Brendan Eich in 10 days in 1995?",
-		"options":  []string{"JavaScript", "Python", "Ruby", "PHP"},
-		"answer":   0,
-	},
-	{
-		"question": "What year was the original Nintendo Game Boy released?",
-		"options":  []string{"1989", "1985", "1991", "1993"},
-		"answer":   0,
-	},
+var wyrCards = []map[string]string{
+	{"optionA": "Always know when someone is lying to you", "optionB": "Always get away with any lie you tell with 100% belief"},
+	{"optionA": "Know the exact date and time of your death", "optionB": "Know the exact cause of your death with no timestamp"},
+	{"optionA": "Travel 100 years into the future", "optionB": "Travel 100 years into the past with full modern knowledge"},
+	{"optionA": "Never have to sleep again with full energy", "optionB": "Never have to work again with unlimited funds"},
+	{"optionA": "Erase your worst mistake from everyone's memory", "optionB": "Receive $5 Million but keep the memory intact"},
+	{"optionA": "Have all your private search history leaked to your contacts", "optionB": "Never be able to use the internet again for life"},
+	{"optionA": "Be able to read everyone's mind without turning it off", "optionB": "Have everyone hear your thoughts whenever they look at you"},
+	{"optionA": "Speak all human languages fluently", "optionB": "Speak and understand all animal languages"},
 }
 
 // StartGame initializes a new synchronized multiplayer game in a call room
@@ -100,16 +177,16 @@ func (gm *GameManager) StartGame(roomName string, gType GameType, player1, playe
 	switch gType {
 	case GameTicTacToe:
 		session.Board = [9]string{}
+	case GameDarkQuestions:
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		q := darkQuestions[r.Intn(len(darkQuestions))]
+		session.CustomData["question"] = q
+		session.CustomData["reactions"] = make(map[string]string)
 	case GameWouldYouRather:
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 		card := wyrCards[r.Intn(len(wyrCards))]
 		session.CustomData["card"] = card
 		session.CustomData["votes"] = make(map[string]string)
-	case GameTrivia:
-		r := rand.New(rand.NewSource(time.Now().UnixNano()))
-		q := triviaQuestions[r.Intn(len(triviaQuestions))]
-		session.CustomData["question"] = q
-		session.CustomData["answers"] = make(map[string]int)
 	case GameTwentyQuestions:
 		session.CustomData["questionsLeft"] = 20
 		session.CustomData["history"] = []map[string]string{}
@@ -188,6 +265,23 @@ func (gm *GameManager) HandleAction(roomName, userID string, actionType string, 
 			}
 		}
 
+	case GameDarkQuestions:
+		if actionType == "next" {
+			r := rand.New(rand.NewSource(time.Now().UnixNano()))
+			q := darkQuestions[r.Intn(len(darkQuestions))]
+			session.CustomData["question"] = q
+			session.CustomData["reactions"] = make(map[string]string)
+			session.Status = "in_progress"
+		} else if actionType == "react" {
+			reaction, _ := payload["reaction"].(string)
+			reactions, ok := session.CustomData["reactions"].(map[string]string)
+			if !ok {
+				reactions = make(map[string]string)
+			}
+			reactions[userID] = reaction
+			session.CustomData["reactions"] = reactions
+		}
+
 	case GameWouldYouRather:
 		if actionType == "vote" {
 			vote, _ := payload["option"].(string)
@@ -207,32 +301,6 @@ func (gm *GameManager) HandleAction(roomName, userID string, actionType string, 
 			card := wyrCards[r.Intn(len(wyrCards))]
 			session.CustomData["card"] = card
 			session.CustomData["votes"] = make(map[string]string)
-			session.Status = "in_progress"
-		}
-
-	case GameTrivia:
-		if actionType == "answer" {
-			var ans int = -1
-			if ansFloat, ok := payload["optionIndex"].(float64); ok {
-				ans = int(ansFloat)
-			} else if ansInt, ok := payload["optionIndex"].(int); ok {
-				ans = ansInt
-			}
-			answers, ok := session.CustomData["answers"].(map[string]int)
-			if !ok {
-				answers = make(map[string]int)
-			}
-			answers[userID] = ans
-			session.CustomData["answers"] = answers
-
-			if len(answers) >= 2 || len(answers) >= len(session.Players) {
-				session.Status = "completed"
-			}
-		} else if actionType == "next" {
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			q := triviaQuestions[r.Intn(len(triviaQuestions))]
-			session.CustomData["question"] = q
-			session.CustomData["answers"] = make(map[string]int)
 			session.Status = "in_progress"
 		}
 	}

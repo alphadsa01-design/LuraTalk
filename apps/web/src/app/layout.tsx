@@ -121,7 +121,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`min-h-full w-full overflow-x-hidden flex flex-col bg-background text-foreground selection:bg-primary selection:text-white antialiased font-sans ${inter.className}`}>
+      <body className={`min-h-full w-full overflow-x-hidden flex flex-col bg-background text-foreground selection:bg-white/20 selection:text-white antialiased font-sans ${inter.className}`}>
         {/* Ambient Cosmic Glowing Background Lighting */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
           <div className="aura-orb bg-primary/20 w-[450px] sm:w-[650px] h-[450px] sm:h-[650px] -top-12 -left-20 sm:-left-36" />

@@ -2,10 +2,13 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Radio, ArrowRight, ShieldCheck, Zap, Lock, Quote } from 'lucide-react';
+import { Radio, ArrowRight, ShieldCheck, Zap, Lock, Quote, PhoneOff } from 'lucide-react';
 import { useUserStore } from '@/stores/useUserStore';
 import { useCallStore } from '@/stores/useCallStore';
 import { getOrCreateAnonymousSession, fetchLiveOnlineStats } from '@/lib/api';
+import { webrtcEngine } from '@/lib/webrtc';
+import { socketClient } from '@/lib/socket';
+import { sounds } from '@/lib/sounds';
 import { motion } from 'framer-motion';
 
 export default function LandingPage() {
@@ -49,9 +52,21 @@ export default function LandingPage() {
   }, [token, setAuth, resetCall]);
 
   const handleStartCall = () => {
+    webrtcEngine.cleanup();
+    socketClient.send('call:end', {});
+    socketClient.leaveQueue();
     resetCall();
     setIsConnecting(true);
     router.push('/match?mode=voice');
+  };
+
+  const handleEndCallFromLanding = () => {
+    sounds.playEndCall();
+    webrtcEngine.cleanup();
+    socketClient.send('call:end', {});
+    socketClient.leaveQueue();
+    resetCall();
+    useCallStore.getState().setStatus('idle');
   };
 
   return (
@@ -95,26 +110,36 @@ export default function LandingPage() {
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
-        className="mt-8 sm:mt-10 w-full max-w-xs flex flex-col items-center gap-4"
+        className="mt-8 sm:mt-10 w-full max-w-xs flex flex-col items-center gap-3"
       >
         {status === 'matched' ? (
-          <button
-            onClick={() => router.push('/match?mode=voice')}
-            className="w-full py-4 px-8 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white text-base font-extrabold shadow-[0_0_30px_rgba(16,185,129,0.35)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 cursor-pointer animate-pulse"
-          >
-            <Radio className="w-5 h-5 text-white" />
-            <span>Return to Call ({peer?.username || 'Partner'})</span>
-            <ArrowRight className="w-4 h-4 ml-0.5 text-white" />
-          </button>
+          <>
+            <button
+              onClick={() => router.push('/match?mode=voice')}
+              className="w-full py-4 px-8 rounded-2xl bg-transparent hover:bg-emerald-500/10 text-emerald-300 border-2 border-emerald-400 hover:border-emerald-300 text-base font-bold hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 cursor-pointer shadow-sm"
+            >
+              <Radio className="w-5 h-5 text-emerald-300" />
+              <span>Return to Call ({peer?.username || 'Partner'})</span>
+              <ArrowRight className="w-4 h-4 ml-0.5 text-emerald-300" />
+            </button>
+
+            <button
+              onClick={handleEndCallFromLanding}
+              className="w-full py-2.5 px-6 rounded-xl bg-transparent hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/30 hover:border-rose-400 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+            >
+              <PhoneOff className="w-3.5 h-3.5" />
+              <span>End Call</span>
+            </button>
+          </>
         ) : (
           <button
             onClick={handleStartCall}
             disabled={isConnecting}
-            className="w-full py-4 px-8 rounded-2xl bg-white hover:bg-neutral-200 text-black text-base font-extrabold shadow-[0_0_30px_rgba(255,255,255,0.18)] hover:shadow-[0_0_40px_rgba(255,255,255,0.30)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
+            className="w-full py-4 px-8 rounded-2xl bg-transparent hover:bg-white/10 text-white border-2 border-white/40 hover:border-white text-base font-bold hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50 shadow-sm"
           >
-            <Radio className="w-5 h-5 text-black" />
+            <Radio className="w-5 h-5 text-white" />
             <span>{isConnecting ? 'Connecting...' : 'Start Talking'}</span>
-            <ArrowRight className="w-4 h-4 ml-0.5 text-black" />
+            <ArrowRight className="w-4 h-4 ml-0.5 text-white" />
           </button>
         )}
       </motion.div>

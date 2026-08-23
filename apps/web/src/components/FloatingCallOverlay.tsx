@@ -37,6 +37,27 @@ export default function FloatingCallOverlay() {
   const isMatchPage = pathname?.startsWith('/match');
   const isCallActive = status === 'matched' && !isMatchPage;
 
+  // Global listener for peer disconnecting or hanging up while user is outside /match
+  React.useEffect(() => {
+    const handlePeerDisconnect = () => {
+      if (useCallStore.getState().status === 'matched') {
+        webrtcEngine.cleanup();
+        resetCall();
+        useCallStore.getState().setStatus('idle');
+      }
+    };
+
+    const unsubPeerLeft = socketClient.on('match:peer_left', handlePeerDisconnect);
+    const unsubCallEnded = socketClient.on('call:ended', handlePeerDisconnect);
+    const unsubHungUp = socketClient.on('call:hung_up', handlePeerDisconnect);
+
+    return () => {
+      unsubPeerLeft();
+      unsubCallEnded();
+      unsubHungUp();
+    };
+  }, [resetCall]);
+
   const formatDuration = (secs: number) => {
     const mins = Math.floor(secs / 60);
     const remainder = secs % 60;
@@ -73,13 +94,13 @@ export default function FloatingCallOverlay() {
           >
             <div className="relative">
               <div
-                className={`w-10 h-10 rounded-full bg-gradient-to-tr from-primary/40 to-secondary/40 border flex items-center justify-center text-lg transition-all ${
+                className={`w-10 h-10 rounded-full bg-zinc-900 border flex items-center justify-center transition-all ${
                   peerSpeaking
                     ? 'border-emerald-400 shadow-md shadow-emerald-500/40 scale-105'
                     : 'border-white/10'
                 }`}
               >
-                🎭
+                <Radio className="w-4 h-4 text-emerald-400" />
               </div>
               <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-400 border-2 border-background animate-pulse" />
             </div>
@@ -105,33 +126,33 @@ export default function FloatingCallOverlay() {
             {/* Mute Mic */}
             <button
               onClick={toggleMute}
-              className={`p-2 rounded-xl border transition-all ${
+              className={`p-2 rounded-xl border transition-all bg-transparent ${
                 isMuted
-                  ? 'bg-rose-500 text-white border-rose-500/50 shadow-md shadow-rose-500/20'
-                  : 'bg-surfaceLight hover:bg-white/10 text-gray-200 border-white/10'
+                  ? 'text-rose-300 border-rose-400'
+                  : 'hover:bg-white/10 text-gray-200 border-white/20 hover:border-white/40'
               }`}
               title={isMuted ? 'Unmute Mic' : 'Mute Mic'}
             >
-              {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              {isMuted ? <MicOff className="w-4 h-4 text-rose-300" /> : <Mic className="w-4 h-4 text-white" />}
             </button>
 
             {/* Deafen Audio */}
             <button
               onClick={toggleDeafen}
-              className={`p-2 rounded-xl border transition-all ${
+              className={`p-2 rounded-xl border transition-all bg-transparent ${
                 isDeafened
-                  ? 'bg-amber-500 text-white border-amber-500/50 shadow-md shadow-amber-500/20'
-                  : 'bg-surfaceLight hover:bg-white/10 text-gray-200 border-white/10'
+                  ? 'text-amber-300 border-amber-400'
+                  : 'hover:bg-white/10 text-gray-200 border-white/20 hover:border-white/40'
               }`}
               title={isDeafened ? 'Enable Speaker' : 'Deafen Audio'}
             >
-              {isDeafened ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              {isDeafened ? <VolumeX className="w-4 h-4 text-amber-300" /> : <Volume2 className="w-4 h-4 text-white" />}
             </button>
 
             {/* Expand / Return to Call */}
             <button
               onClick={handleExpandCall}
-              className="p-2 rounded-xl bg-primary/20 hover:bg-primary/30 border border-primary/40 text-secondary hover:text-white transition-all"
+              className="p-2 rounded-xl bg-transparent hover:bg-white/10 border border-white/30 hover:border-white text-white transition-all"
               title="Expand Call Screen"
             >
               <Maximize2 className="w-4 h-4" />
@@ -140,7 +161,7 @@ export default function FloatingCallOverlay() {
             {/* End Call */}
             <button
               onClick={handleEndCall}
-              className="p-2 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/30 transition-all"
+              className="p-2 rounded-xl bg-transparent hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/40 hover:border-rose-400 transition-all"
               title="End Call"
             >
               <PhoneOff className="w-4 h-4" />

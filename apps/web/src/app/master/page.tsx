@@ -36,6 +36,8 @@ import {
   Signal,
   ArrowUpRight,
   Globe,
+  Gamepad2,
+  Mic,
 } from 'lucide-react';
 import {
   fetchAdminStats,
@@ -685,14 +687,15 @@ export default function AdminPage() {
           <div className="space-y-3">
             {stats.recentAnalyticsEvents?.map((evt: any, idx: number) => {
               const getBadge = (name: string) => {
-                if (name.includes('match')) return { icon: '⚡', color: 'bg-primary/20 text-secondary' };
-                if (name.includes('voice')) return { icon: '🎙️', color: 'bg-cyan-500/20 text-cyan-300' };
-                if (name.includes('mystery')) return { icon: '🔮', color: 'bg-pink-500/20 text-pink-300' };
-                if (name.includes('friend')) return { icon: '🤝', color: 'bg-emerald-500/20 text-emerald-300' };
-                if (name.includes('game')) return { icon: '🎮', color: 'bg-amber-500/20 text-amber-300' };
-                return { icon: '📍', color: 'bg-white/10 text-white' };
+                if (name.includes('match')) return { icon: Zap, color: 'bg-primary/20 text-secondary' };
+                if (name.includes('voice')) return { icon: Mic, color: 'bg-cyan-500/20 text-cyan-300' };
+                if (name.includes('mystery')) return { icon: Sparkles, color: 'bg-pink-500/20 text-pink-300' };
+                if (name.includes('friend')) return { icon: Users, color: 'bg-emerald-500/20 text-emerald-300' };
+                if (name.includes('game')) return { icon: Gamepad2, color: 'bg-amber-500/20 text-amber-300' };
+                return { icon: Radio, color: 'bg-white/10 text-white' };
               };
               const badge = getBadge(evt.event);
+              const EventIcon = badge.icon;
 
               return (
                 <motion.div
@@ -703,8 +706,8 @@ export default function AdminPage() {
                   className="p-4 rounded-2xl bg-surfaceLight/70 border border-white/5 flex items-center justify-between hover:bg-surfaceLight transition-colors"
                 >
                   <div className="flex items-center gap-3.5">
-                    <div className={`w-9 h-9 rounded-xl ${badge.color} flex items-center justify-center text-sm font-bold shadow-inner`}>
-                      {badge.icon}
+                    <div className={`w-9 h-9 rounded-xl ${badge.color} flex items-center justify-center shadow-inner`}>
+                      <EventIcon className="w-4 h-4" />
                     </div>
                     <div>
                       <span className="text-xs font-bold text-white font-mono">{evt.event}</span>

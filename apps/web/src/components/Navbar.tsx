@@ -170,7 +170,10 @@ export default function Navbar() {
                         <span>{user?.username || 'Anonymous'}</span>
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                       </h4>
-                      <p className="text-[11px] text-gray-400 font-mono">🔒 Locked Identity</p>
+                      <p className="text-[11px] text-gray-400 font-mono flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-gray-400" />
+                        <span>Locked Identity</span>
+                      </p>
                     </div>
                   </div>
 

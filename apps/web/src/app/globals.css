@@ -17,6 +17,16 @@
     -webkit-text-size-adjust: 100%;
     touch-action: manipulation;
   }
+
+  ::selection {
+    background-color: rgba(255, 255, 255, 0.22);
+    color: #FFFFFF;
+  }
+
+  ::-moz-selection {
+    background-color: rgba(255, 255, 255, 0.22);
+    color: #FFFFFF;
+  }
 }
 
 /* Monochrome Glassmorphism Panels */
@@ -97,6 +107,20 @@
   background: rgba(255, 255, 255, 0.4);
 }
 
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
 /* Hide scrollbar for mobile carousels and pill lists */
 .scrollbar-none::-webkit-scrollbar {
   display: none;
@@ -104,4 +128,48 @@
 .scrollbar-none {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Clean Unfilled Button Utilities */
+.btn-outline-glass {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #FFFFFF;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-outline-glass:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.40);
+}
+.btn-outline-glass:active {
+  transform: scale(0.97);
+}
+
+/* Subtle animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+@keyframes spinOnce {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-once {
+  animation: spinOnce 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }

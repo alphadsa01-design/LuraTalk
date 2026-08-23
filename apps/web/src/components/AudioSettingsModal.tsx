@@ -244,10 +244,10 @@ export default function AudioSettingsModal({ isOpen, onClose }: AudioSettingsMod
             {/* AI Noise Suppression */}
             <button
               onClick={handleToggleNoiseSuppression}
-              className={`w-full p-3 rounded-2xl border text-xs font-semibold flex items-center justify-between transition-all ${
+              className={`w-full p-3 rounded-2xl border text-xs font-semibold flex items-center justify-between transition-all bg-transparent ${
                 noiseSuppression
-                  ? 'bg-secondary/15 border-secondary text-white'
-                  : 'bg-surfaceLight/50 border-white/5 text-gray-400 hover:text-white'
+                  ? 'border-white text-white'
+                  : 'border-white/10 text-gray-400 hover:text-white hover:border-white/30'
               }`}
             >
               <div className="flex items-center gap-2.5 text-left">
@@ -259,7 +259,7 @@ export default function AudioSettingsModal({ isOpen, onClose }: AudioSettingsMod
               </div>
               <div
                 className={`w-5 h-5 rounded-md flex items-center justify-center border ${
-                  noiseSuppression ? 'bg-secondary border-secondary text-black' : 'border-white/20'
+                  noiseSuppression ? 'border-white text-white' : 'border-white/20'
                 }`}
               >
                 {noiseSuppression && <Check className="w-3.5 h-3.5 stroke-[3]" />}
@@ -269,14 +269,14 @@ export default function AudioSettingsModal({ isOpen, onClose }: AudioSettingsMod
             {/* Echo Cancellation */}
             <button
               onClick={handleToggleEchoCancellation}
-              className={`w-full p-3 rounded-2xl border text-xs font-semibold flex items-center justify-between transition-all ${
+              className={`w-full p-3 rounded-2xl border text-xs font-semibold flex items-center justify-between transition-all bg-transparent ${
                 echoCancellation
-                  ? 'bg-primary/20 border-primary text-white'
-                  : 'bg-surfaceLight/50 border-white/5 text-gray-400 hover:text-white'
+                  ? 'border-white text-white'
+                  : 'border-white/10 text-gray-400 hover:text-white hover:border-white/30'
               }`}
             >
               <div className="flex items-center gap-2.5 text-left">
-                <Volume2 className="w-4 h-4 text-secondary flex-shrink-0" />
+                <Volume2 className="w-4 h-4 text-white flex-shrink-0" />
                 <div>
                   <div className="font-bold text-white">Echo Cancellation</div>
                   <div className="text-[10px] text-gray-400">Prevents audio feedback when on speaker</div>
@@ -284,7 +284,7 @@ export default function AudioSettingsModal({ isOpen, onClose }: AudioSettingsMod
               </div>
               <div
                 className={`w-5 h-5 rounded-md flex items-center justify-center border ${
-                  echoCancellation ? 'bg-primary border-primary text-white' : 'border-white/20'
+                  echoCancellation ? 'border-white text-white' : 'border-white/20'
                 }`}
               >
                 {echoCancellation && <Check className="w-3.5 h-3.5 stroke-[3]" />}
@@ -294,14 +294,14 @@ export default function AudioSettingsModal({ isOpen, onClose }: AudioSettingsMod
             {/* Auto Gain Control */}
             <button
               onClick={handleToggleAutoGain}
-              className={`w-full p-3 rounded-2xl border text-xs font-semibold flex items-center justify-between transition-all ${
+              className={`w-full p-3 rounded-2xl border text-xs font-semibold flex items-center justify-between transition-all bg-transparent ${
                 autoGainControl
-                  ? 'bg-accent-pink/15 border-accent-pink text-white'
-                  : 'bg-surfaceLight/50 border-white/5 text-gray-400 hover:text-white'
+                  ? 'border-white text-white'
+                  : 'border-white/10 text-gray-400 hover:text-white hover:border-white/30'
               }`}
             >
               <div className="flex items-center gap-2.5 text-left">
-                <Sparkles className="w-4 h-4 text-accent-pink flex-shrink-0" />
+                <Sparkles className="w-4 h-4 text-white flex-shrink-0" />
                 <div>
                   <div className="font-bold text-white">Auto Volume Leveling</div>
                   <div className="text-[10px] text-gray-400">Automatically normalizes quiet speech</div>
@@ -309,7 +309,7 @@ export default function AudioSettingsModal({ isOpen, onClose }: AudioSettingsMod
               </div>
               <div
                 className={`w-5 h-5 rounded-md flex items-center justify-center border ${
-                  autoGainControl ? 'bg-accent-pink border-accent-pink text-white' : 'border-white/20'
+                  autoGainControl ? 'border-white text-white' : 'border-white/20'
                 }`}
               >
                 {autoGainControl && <Check className="w-3.5 h-3.5 stroke-[3]" />}
@@ -324,7 +324,7 @@ export default function AudioSettingsModal({ isOpen, onClose }: AudioSettingsMod
                 sounds.playClick();
                 onClose();
               }}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-xs font-bold shadow-lg hover:scale-105 active:scale-95 transition-all"
+              className="px-6 py-2.5 rounded-xl bg-transparent hover:bg-white/10 text-white text-xs font-bold border border-white/40 hover:border-white active:scale-95 transition-all"
             >
               Done
             </button>

@@ -56,11 +56,16 @@ func NewAssistantEngine() *AssistantEngine {
 			"Ask what piece of advice they were given that actually stuck with them.",
 			"Ask what obscure rabbit hole they spent 3 hours researching recently.",
 			"Ask what made them smile or laugh out loud today.",
+			"Ask what skill or hobby they secretly want to master.",
+			"Ask if they are a morning bird or late night philosopher.",
+			"Ask what their comfort food or guilty pleasure snack is.",
+			"Ask what is the best spontaneous decision they ever made.",
+			"Ask if they prefer exploring a bustling city or quiet nature getaway.",
 		},
 	}
 }
 
-// GenerateIcebreaker creates a contextual icebreaker based on shared interests or mood
+// GenerateIcebreaker creates a single contextual icebreaker
 func (ae *AssistantEngine) GenerateIcebreaker(sharedInterests []string, intention, mood string) string {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -77,6 +82,41 @@ func (ae *AssistantEngine) GenerateIcebreaker(sharedInterests []string, intentio
 	}
 
 	return ae.generalTopics[r.Intn(len(ae.generalTopics))]
+}
+
+// GeneratePairIcebreakers generates two completely different, unique questions for two connected peers
+func (ae *AssistantEngine) GeneratePairIcebreakers(sharedInterests []string, intentionA, moodA, intentionB, moodB string) (string, string) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	qA := ae.GenerateIcebreaker(sharedInterests, intentionA, moodA)
+
+	// Collect pool of alternatives to ensure qB != qA
+	var pool []string
+	for _, interest := range sharedInterests {
+		clean := strings.ToLower(strings.TrimSpace(interest))
+		if prompts, exists := ae.icebreakerMap[clean]; exists {
+			pool = append(pool, prompts...)
+		}
+	}
+	if intentionB == "deep" || moodB == "deep" {
+		pool = append(pool, ae.icebreakerMap["deep"]...)
+	}
+	pool = append(pool, ae.generalTopics...)
+
+	var qB string
+	for attempts := 0; attempts < 15; attempts++ {
+		candidate := pool[r.Intn(len(pool))]
+		if candidate != qA {
+			qB = candidate
+			break
+		}
+	}
+	if qB == "" || qB == qA {
+		// Fallback distinct question
+		qB = "Ask what is something they've been daydreaming about lately."
+	}
+
+	return qA, qB
 }
 
 // TranslateMessage translates text content between languages (instant neural translation pipeline)

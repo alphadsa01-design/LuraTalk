@@ -392,17 +392,21 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 		}
 	}(convID, pair.RoomName, clientA.UserID, clientB.UserID, clientA.Username, clientB.Username, clientA.AvatarID, clientB.AvatarID, now)
 
-	// Generate AI icebreaker suggestion
-	icebreaker := h.AIEngine.GenerateIcebreaker(pair.SharedInterests, pair.TicketA.Preferences.Intention, pair.TicketA.Preferences.Mood)
+	// Generate unique, distinct AI icebreaker suggestions for both peers
+	icebreakerA, icebreakerB := h.AIEngine.GeneratePairIcebreakers(
+		pair.SharedInterests,
+		pair.TicketA.Preferences.Intention, pair.TicketA.Preferences.Mood,
+		pair.TicketB.Preferences.Intention, pair.TicketB.Preferences.Mood,
+	)
 
 	// Notify Client A
 	clientA.SendJSON("match:found", map[string]interface{}{
-		"matchId":     pair.MatchID,
-		"roomName":    pair.RoomName,
-		"mode":        pair.TicketA.Mode,
+		"matchId":      pair.MatchID,
+		"roomName":     pair.RoomName,
+		"mode":         pair.TicketA.Mode,
 		"livekitToken": tokenA,
-		"livekitUrl":  h.LiveKitTokenGen.GetLiveKitURL(),
-		"isInitiator": true,
+		"livekitUrl":   h.LiveKitTokenGen.GetLiveKitURL(),
+		"isInitiator":  true,
 		"peer": map[string]interface{}{
 			"id":              pair.TicketB.UserID,
 			"username":        pair.TicketB.Username,
@@ -413,17 +417,17 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 			"sharedInterests": pair.SharedInterests,
 			"mysteryLevel":    1,
 		},
-		"icebreakerSuggestion": icebreaker,
+		"icebreakerSuggestion": icebreakerA,
 	})
 
 	// Notify Client B
 	clientB.SendJSON("match:found", map[string]interface{}{
-		"matchId":     pair.MatchID,
-		"roomName":    pair.RoomName,
-		"mode":        pair.TicketB.Mode,
+		"matchId":      pair.MatchID,
+		"roomName":     pair.RoomName,
+		"mode":         pair.TicketB.Mode,
 		"livekitToken": tokenB,
-		"livekitUrl":  h.LiveKitTokenGen.GetLiveKitURL(),
-		"isInitiator": false,
+		"livekitUrl":   h.LiveKitTokenGen.GetLiveKitURL(),
+		"isInitiator":  false,
 		"peer": map[string]interface{}{
 			"id":              pair.TicketA.UserID,
 			"username":        pair.TicketA.Username,
@@ -434,7 +438,7 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 			"sharedInterests": pair.SharedInterests,
 			"mysteryLevel":    1,
 		},
-		"icebreakerSuggestion": icebreaker,
+		"icebreakerSuggestion": icebreakerB,
 	})
 }
 

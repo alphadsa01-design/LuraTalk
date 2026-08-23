@@ -14,6 +14,8 @@ import {
   MessageSquare,
   Sparkles,
   PhoneOff,
+  Phone,
+  Flame,
   Loader2,
   Languages,
   Radio,
@@ -681,8 +683,8 @@ function MatchPageContent() {
                   className="w-full h-full object-cover bg-slate-900"
                 />
               </div>
-              <span className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-400 border-2 border-background animate-pulse flex items-center justify-center text-xs">
-                📞
+              <span className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-400 border-2 border-background animate-pulse flex items-center justify-center">
+                <Phone className="w-3 h-3 text-slate-950" />
               </span>
             </div>
 
@@ -724,7 +726,7 @@ function MatchPageContent() {
                   setDirectCallState('idle');
                   handleStartQueue(initialMode);
                 }}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-xs font-bold shadow-lg shadow-primary/25 hover:scale-105 transition-all flex items-center gap-1.5"
+                className="px-5 py-2.5 rounded-xl bg-transparent hover:bg-white/10 text-white border border-white/40 hover:border-white text-xs font-bold transition-all flex items-center gap-1.5 active:scale-95"
               >
                 <Radio className="w-3.5 h-3.5" />
                 <span>Random Voice Match</span>
@@ -732,7 +734,7 @@ function MatchPageContent() {
 
               <button
                 onClick={() => router.push('/history')}
-                className="px-5 py-2.5 rounded-xl bg-surfaceLight hover:bg-white/10 text-gray-300 border border-white/10 text-xs font-bold transition-all"
+                className="px-5 py-2.5 rounded-xl bg-transparent hover:bg-white/10 text-neutral-300 hover:text-white border border-white/20 hover:border-white/40 text-xs font-bold transition-all"
               >
                 Back to History
               </button>
@@ -744,9 +746,9 @@ function MatchPageContent() {
             <div className="absolute w-44 h-44 sm:w-64 sm:h-64 rounded-full border border-primary/30 animate-ping opacity-40" />
             <div className="absolute w-64 h-64 sm:w-88 sm:h-88 rounded-full border border-secondary/20 animate-pulse-slow opacity-30" />
 
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/20 border border-primary/40 p-1 shadow-2xl mb-4 relative z-10 animate-pulse">
-              <div className="w-full h-full rounded-full bg-surfaceLight flex items-center justify-center text-white">
-                <Radio className="w-8 h-8 sm:w-10 sm:h-10 text-primary-light" />
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-transparent border border-white/30 p-1 shadow-2xl mb-4 relative z-10 animate-pulse">
+              <div className="w-full h-full rounded-full bg-transparent flex items-center justify-center text-white">
+                <Radio className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
               </div>
             </div>
 
@@ -757,7 +759,7 @@ function MatchPageContent() {
 
             <button
               onClick={handleCancelSearch}
-              className="mt-6 px-6 py-2.5 rounded-xl bg-surfaceLight hover:bg-white/10 text-neutral-300 hover:text-white text-xs font-bold border border-white/10 transition-all active:scale-95 flex items-center gap-1.5 z-10"
+              className="mt-6 px-6 py-2.5 rounded-xl bg-transparent hover:bg-white/10 text-neutral-300 hover:text-white text-xs font-bold border border-white/20 hover:border-white/40 transition-all active:scale-95 flex items-center gap-1.5 z-10"
             >
               <PhoneOff className="w-3.5 h-3.5" />
               <span>Cancel</span>
@@ -765,7 +767,7 @@ function MatchPageContent() {
           </div>
         ) : status === 'disconnected' ? (
           <div className="w-full h-[260px] sm:h-[340px] rounded-3xl glass-panel flex flex-col items-center justify-center text-center p-6 space-y-4">
-            <div className="w-16 h-16 rounded-2xl bg-white/10 text-white flex items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-transparent border border-white/20 text-white flex items-center justify-center">
               <PhoneOff className="w-8 h-8" />
             </div>
             <div>
@@ -778,14 +780,14 @@ function MatchPageContent() {
             <div className="flex items-center justify-center gap-3">
               <button
                 onClick={handleCancelSearch}
-                className="px-5 py-3 rounded-2xl bg-surfaceLight hover:bg-white/10 text-white text-xs sm:text-sm font-semibold border border-white/10 transition-all"
+                className="px-5 py-3 rounded-2xl bg-transparent hover:bg-white/10 text-white text-xs sm:text-sm font-semibold border border-white/20 hover:border-white/40 transition-all"
               >
                 ← Back to Home
               </button>
 
               <button
                 onClick={handleNextMatch}
-                className="px-6 py-3 rounded-2xl gradient-bg text-white text-xs sm:text-sm font-bold shadow-xl shadow-primary/20 hover:scale-105 transition-transform"
+                className="px-6 py-3 rounded-2xl bg-transparent hover:bg-white/10 text-white text-xs sm:text-sm font-bold border-2 border-white/40 hover:border-white hover:scale-105 active:scale-95 transition-all"
               >
                 Find Next Match ➔
               </button>
@@ -800,21 +802,19 @@ function MatchPageContent() {
               isDeafened={isDeafened}
               peerName={peer.username}
               peerAvatar={peer.avatarId}
-              sharedInterestsCount={peer.sharedInterests?.length || 0}
-              sharedInterests={peer.sharedInterests || []}
               onEndCall={handleLeaveCall}
             />
 
             {/* AI Icebreaker Card (Clean, Unobtrusive, Single-Line Strip) */}
             {icebreakerSuggestion && (
-              <div className="glass-panel px-4 py-2.5 rounded-2xl border border-primary/20 flex items-center justify-between gap-3 text-xs">
+              <div className="glass-panel px-4 py-2.5 rounded-2xl border border-white/15 flex items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-2 text-white min-w-0">
-                  <Sparkles className="w-4 h-4 text-primary-light shrink-0" />
+                  <Sparkles className="w-4 h-4 text-white shrink-0" />
                   <span className="truncate text-neutral-300">{icebreakerSuggestion}</span>
                 </div>
                 <button
                   onClick={() => handleSendMessage(icebreakerSuggestion)}
-                  className="shrink-0 px-2.5 py-1 rounded-lg bg-primary/20 hover:bg-primary text-white text-[11px] font-semibold transition-all"
+                  className="shrink-0 px-2.5 py-1 rounded-lg bg-transparent hover:bg-white/10 text-white border border-white/20 hover:border-white/50 text-[11px] font-semibold transition-all"
                 >
                   Send
                 </button>
@@ -823,16 +823,16 @@ function MatchPageContent() {
 
             {/* Live Translation Caption (If Enabled) */}
             {enableLiveTranslation && liveTranslationCaption && (
-              <div className="glass-panel px-4 py-2 rounded-2xl border border-secondary/30 text-center text-xs text-white font-medium animate-pulse">
+              <div className="glass-panel px-4 py-2 rounded-2xl border border-white/20 text-center text-xs text-white font-medium animate-pulse">
                 {liveTranslationCaption}
               </div>
             )}
           </div>
         ) : (
           <div className="w-full h-[260px] sm:h-[340px] rounded-3xl glass-panel-glow flex flex-col items-center justify-center text-center p-6 space-y-4">
-            <div className="w-16 h-16 rounded-2xl bg-primary/20 border border-primary/40 p-0.5 shadow-lg flex items-center justify-center">
-              <div className="w-full h-full rounded-[14px] bg-surfaceLight flex items-center justify-center text-white">
-                <Radio className="w-8 h-8 text-primary-light" />
+            <div className="w-16 h-16 rounded-2xl bg-transparent border border-white/30 p-0.5 shadow-lg flex items-center justify-center">
+              <div className="w-full h-full rounded-[14px] bg-transparent flex items-center justify-center text-white">
+                <Radio className="w-8 h-8 text-white" />
               </div>
             </div>
             <div>
@@ -843,7 +843,7 @@ function MatchPageContent() {
             </div>
             <button
               onClick={() => handleStartQueue(initialMode)}
-              className="px-6 py-3 rounded-2xl gradient-bg text-white text-sm font-bold shadow-xl shadow-primary/25 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+              className="px-6 py-3 rounded-2xl bg-transparent hover:bg-white/10 text-white text-sm font-bold border-2 border-white/40 hover:border-white hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
             >
               <Radio className="w-4 h-4 text-white" />
               <span>Start Voice Match</span>
@@ -858,7 +858,7 @@ function MatchPageContent() {
           <div className="relative w-full h-[80vh] max-w-md mx-auto">
             <button
               onClick={() => setIsChatOpen(false)}
-              className="absolute top-2 right-2 z-10 p-2 rounded-full bg-surfaceLight text-neutral-300 hover:text-white"
+              className="absolute top-2 right-2 z-10 p-2 rounded-full bg-transparent hover:bg-white/10 text-neutral-300 hover:text-white border border-white/20"
             >
               <X className="w-4 h-4" />
             </button>
@@ -880,18 +880,18 @@ function MatchPageContent() {
 
       {/* Clean Floating Bottom In-Call Dock */}
       {status === 'matched' && (
-        <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-lg w-[calc(100%-1.5rem)] sm:w-auto glass-panel-glow p-1.5 sm:p-2 rounded-3xl border border-primary/20 shadow-2xl backdrop-blur-3xl flex items-center justify-between sm:justify-center gap-1.5 sm:gap-2 pb-[max(0.4rem,env(safe-area-inset-bottom))]">
+        <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-lg w-[calc(100%-1.5rem)] sm:w-auto glass-panel-glow p-1.5 sm:p-2 rounded-3xl border border-white/20 shadow-2xl backdrop-blur-3xl flex items-center justify-between sm:justify-center gap-1.5 sm:gap-2 pb-[max(0.4rem,env(safe-area-inset-bottom))]">
           {/* Mute Button */}
           <button
             onClick={handleToggleMute}
             className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
               isMuted
-                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                : 'bg-surfaceLight hover:bg-white/15 text-white border border-white/10'
+                ? 'bg-transparent text-rose-300 border border-rose-400'
+                : 'bg-transparent hover:bg-white/10 text-white border border-white/20 hover:border-white/40'
             }`}
             title={isMuted ? 'Unmute' : 'Mute'}
           >
-            {isMuted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-white" />}
+            {isMuted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5 text-rose-300" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-white" />}
           </button>
 
           {/* Chat Button with Badge */}
@@ -899,14 +899,14 @@ function MatchPageContent() {
             onClick={() => setIsChatOpen(!isChatOpen)}
             className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center relative transition-all active:scale-95 ${
               isChatOpen
-                ? 'bg-white text-black shadow-lg shadow-white/20'
-                : 'bg-surfaceLight hover:bg-white/15 text-neutral-200 border border-white/10'
+                ? 'bg-transparent text-white border-2 border-white'
+                : 'bg-transparent hover:bg-white/10 text-neutral-200 border border-white/20 hover:border-white/40'
             }`}
             title="Open In-Call Chat"
           >
             <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
             {messages.length > 0 && !isChatOpen && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-white text-black text-[9px] font-bold flex items-center justify-center shadow">
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-transparent border border-white text-white text-[9px] font-bold flex items-center justify-center shadow">
                 {messages.length}
               </span>
             )}
@@ -917,21 +917,21 @@ function MatchPageContent() {
             onClick={() => setIsGameMenuOpen(!isGameMenuOpen)}
             className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
               isGameMenuOpen
-                ? 'bg-gradient-to-tr from-primary to-secondary text-white shadow-lg shadow-primary/30 scale-105'
-                : 'bg-surfaceLight hover:bg-white/15 text-neutral-200 border border-white/10'
+                ? 'bg-transparent text-white border-2 border-white scale-105'
+                : 'bg-transparent hover:bg-white/10 text-neutral-200 border border-white/20 hover:border-white/40'
             }`}
-            title="Play In-Call Mini-Games (Tic-Tac-Toe, Trivia, Would You Rather)"
+            title="Play In-Call Mini-Games (Tic-Tac-Toe, Would You Rather, Dark Truths)"
           >
             <Gamepad2 className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
 
-          {/* Next Match Button (Primary & Prominent - White Button with Black Text) */}
+          {/* Next Match Button (Outline Style) */}
           <button
             onClick={handleNextMatch}
-            className="flex-1 sm:flex-initial h-10 sm:h-11 min-w-[110px] sm:min-w-[130px] px-3.5 sm:px-5 rounded-2xl bg-white text-black text-xs sm:text-sm font-bold shadow-xl shadow-white/20 hover:bg-neutral-200 hover:scale-[1.03] active:scale-[0.97] transition-all flex items-center justify-center gap-1.5 sm:gap-2"
+            className="flex-1 sm:flex-initial h-10 sm:h-11 min-w-[100px] sm:min-w-[120px] px-3 sm:px-4 rounded-2xl bg-transparent text-white text-xs sm:text-sm font-bold border-2 border-white/40 hover:border-white hover:bg-white/10 hover:scale-[1.03] active:scale-[0.97] transition-all flex items-center justify-center gap-1.5"
             title="Find Next Match"
           >
-            <SkipForward className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black" />
+            <SkipForward className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
             <span>Next</span>
           </button>
 
@@ -941,8 +941,8 @@ function MatchPageContent() {
             disabled={friendRequested}
             className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
               friendRequested
-                ? 'bg-white/20 text-white border border-white/40'
-                : 'bg-surfaceLight hover:bg-white/15 text-white border border-white/10'
+                ? 'bg-transparent text-emerald-300 border border-emerald-400'
+                : 'bg-transparent hover:bg-white/10 text-white border border-white/20 hover:border-white/40'
             }`}
             title={friendRequested ? 'Friend Added' : 'Add Friend'}
           >
@@ -952,7 +952,7 @@ function MatchPageContent() {
           {/* Safety / Report Button */}
           <button
             onClick={() => setIsSafetyOpen(true)}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-surfaceLight hover:bg-white/15 text-neutral-400 hover:text-white border border-white/10 flex items-center justify-center transition-all active:scale-95"
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-transparent hover:bg-white/10 text-neutral-400 hover:text-white border border-white/20 hover:border-white/40 flex items-center justify-center transition-all active:scale-95"
             title="Safety & Moderation"
           >
             <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -961,7 +961,7 @@ function MatchPageContent() {
           {/* End Call Button */}
           <button
             onClick={handleLeaveCall}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-neutral-900 hover:bg-red-600 border border-white/20 hover:border-red-500 text-white shadow-lg flex items-center justify-center transition-all active:scale-95"
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-transparent hover:bg-rose-500/20 text-white hover:text-rose-300 border border-white/20 hover:border-rose-400 flex items-center justify-center transition-all active:scale-95"
             title="End Conversation"
           >
             <PhoneOff className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -976,23 +976,26 @@ function MatchPageContent() {
             Launch In-Call Game
           </p>
           {[
-            { id: 'tictactoe', name: 'Tic-Tac-Toe', icon: '❌' },
-            { id: 'would_you_rather', name: 'Would You Rather', icon: '🤔' },
-            { id: 'trivia', name: 'Speed Trivia', icon: '🧠' },
-          ].map((game) => (
-            <button
-              key={game.id}
-              onClick={() => {
-                socketClient.sendGameAction('start', game.id);
-                openGame(game.id as any);
-                setIsGameMenuOpen(false);
-              }}
-              className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/10 text-xs font-semibold text-white transition-colors"
-            >
-              <span>{game.icon}</span>
-              <span>{game.name}</span>
-            </button>
-          ))}
+            { id: 'tictactoe', name: 'Tic-Tac-Toe (Turn by Turn)', icon: Gamepad2 },
+            { id: 'dark_questions', name: 'Dark & Deep Truths', icon: Flame },
+            { id: 'would_you_rather', name: 'Would You Rather', icon: Sparkles },
+          ].map((game) => {
+            const GameIcon = game.icon;
+            return (
+              <button
+                key={game.id}
+                onClick={() => {
+                  socketClient.sendGameAction('start', game.id);
+                  openGame(game.id as any);
+                  setIsGameMenuOpen(false);
+                }}
+                className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/10 text-xs font-semibold text-white transition-colors"
+              >
+                <GameIcon className="w-4 h-4 text-cyan-400" />
+                <span>{game.name}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 

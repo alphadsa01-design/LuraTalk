@@ -30,11 +30,11 @@ interface ChatPanelProps {
 const QUICK_EMOJIS = ['👋', '🔥', '😂', '✨', '🎮', '❤️', '🙌', '💯', '🚀', '💡'];
 
 const ICEBREAKER_PROMPTS = [
-  'What is your favorite travel destination? ✈️',
-  'What music are you listening to lately? 🎵',
-  'Coffee or tea person? ☕',
-  'What is the best movie you have seen? 🎬',
-  'If you had one superpower, what would it be? 🦸',
+  'What is your favorite travel destination?',
+  'What music are you listening to lately?',
+  'Coffee or tea person?',
+  'What is the best movie you have seen?',
+  'If you had one superpower, what would it be?',
 ];
 
 export default function ChatPanel({
@@ -278,7 +278,7 @@ export default function ChatPanel({
         <button
           type="submit"
           disabled={!input.trim()}
-          className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-primary to-secondary text-white flex items-center justify-center transition-all shadow-md shadow-primary/25 disabled:opacity-40 disabled:scale-95 active:scale-90 hover:opacity-90 shrink-0"
+          className="w-10 h-10 rounded-2xl bg-transparent hover:bg-white/10 text-white border border-white/30 hover:border-white flex items-center justify-center transition-all disabled:opacity-40 active:scale-90 shrink-0"
         >
           <Send className="w-4 h-4" />
         </button>

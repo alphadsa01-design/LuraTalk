@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Users, Radio, Trash2, Plus, Brain, Sparkles, UserCheck, PhoneCall, UserMinus, UserPlus, Clock, Check, X } from 'lucide-react';
+import { Users, Radio, Trash2, Plus, Brain, Sparkles, UserCheck, PhoneCall, UserMinus, UserPlus, Clock, Check, X, ChevronRight } from 'lucide-react';
 import { fetchFriends, fetchMemories, saveMemory, deleteMemory, removeFriend, acceptFriendRequest, addFriend, getOrCreateAnonymousSession } from '@/lib/api';
 import {
   getLocalFriends,
@@ -304,8 +304,9 @@ export default function FriendsPage() {
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-white">{req.friend.username}</h4>
-                    <p className="text-[11px] text-gray-400">
-                      {req.isOnline ? '🟢 Online' : 'Offline'} • Sent you a request
+                    <p className="text-[11px] text-gray-400 flex items-center gap-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full ${req.isOnline ? 'bg-emerald-400' : 'bg-gray-500'}`} />
+                      <span>{req.isOnline ? 'Online' : 'Offline'} • Sent you a request</span>
                     </p>
                   </div>
                 </div>
@@ -313,7 +314,7 @@ export default function FriendsPage() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleAcceptRequest(req.friend.id)}
-                    className="px-3 py-1.5 rounded-xl gradient-bg text-white text-xs font-bold shadow-md shadow-primary/25 hover:scale-105 transition-all flex items-center gap-1 active:scale-95"
+                    className="px-3 py-1.5 rounded-xl bg-transparent hover:bg-emerald-500/15 text-emerald-300 border border-emerald-400 text-xs font-bold transition-all flex items-center gap-1 active:scale-95"
                     title="Accept Request"
                   >
                     <Check className="w-3.5 h-3.5" />
@@ -321,7 +322,7 @@ export default function FriendsPage() {
                   </button>
                   <button
                     onClick={() => handleDeclineRequest(req.friend.id)}
-                    className="p-1.5 rounded-xl bg-white/10 hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 transition-colors"
+                    className="p-1.5 rounded-xl bg-transparent hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-white/10 transition-colors"
                     title="Decline"
                   >
                     <X className="w-4 h-4" />
@@ -369,7 +370,7 @@ export default function FriendsPage() {
 
           {acceptedFriends.length === 0 ? (
             <div className="glass-panel rounded-3xl p-8 text-center border border-white/10 space-y-3">
-              <span className="text-4xl block">🤝</span>
+              <Users className="w-12 h-12 text-gray-500 mx-auto" />
               <h4 className="text-base font-bold text-white">No Friends Yet</h4>
               <p className="text-xs text-gray-400 max-w-xs mx-auto leading-relaxed">
                 Friendships in LuraTalk are made naturally during calls! While talking to someone in random match, click <strong>"Add Friend"</strong> to connect.
@@ -412,8 +413,9 @@ export default function FriendsPage() {
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-white">{item.friend.username}</h4>
-                      <p className="text-[11px] text-gray-400">
-                        {item.isOnline ? '🟢 Online' : 'Offline'} • {item.friend.mood || 'Chill'}
+                      <p className="text-[11px] text-gray-400 flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${item.isOnline ? 'bg-emerald-400' : 'bg-gray-500'}`} />
+                        <span>{item.isOnline ? 'Online' : 'Offline'} • {item.friend.mood || 'Chill'}</span>
                       </p>
                     </div>
                   </div>
@@ -428,13 +430,13 @@ export default function FriendsPage() {
                           )}`
                         );
                       }}
-                      className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-primary/20 hover:bg-primary text-secondary hover:text-white border border-primary/30 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                      className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-transparent hover:bg-white/10 text-white border border-white/30 hover:border-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
                       title="Direct Call Friend"
                     >
                       <PhoneCall className="w-3.5 h-3.5" />
                       <span className="hidden sm:inline">Call</span>
                     </button>
-                    <span className="text-xs text-gray-500">→</span>
+                    <ChevronRight className="w-4 h-4 text-gray-500" />
                   </div>
                 </div>
               );
@@ -495,7 +497,7 @@ export default function FriendsPage() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleRemoveFriend(selectedFriend.friend.id)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surfaceLight hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-white/10 text-xs font-semibold transition-all"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-transparent hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 border border-white/15 text-xs font-semibold transition-all"
                     title="Remove Friend"
                   >
                     <UserMinus className="w-3.5 h-3.5" />
@@ -510,7 +512,7 @@ export default function FriendsPage() {
                         )}`
                       )
                     }
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-xs font-bold shadow-md shadow-primary/20 hover:scale-105 transition-transform"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-transparent hover:bg-white/10 text-white text-xs font-bold border border-white/40 hover:border-white transition-all"
                   >
                     <PhoneCall className="w-3.5 h-3.5" />
                     <span>Call Friend</span>
@@ -545,7 +547,7 @@ export default function FriendsPage() {
                   />
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-semibold flex items-center gap-1 shadow-md shadow-primary/25 transition-all"
+                    className="px-4 py-2 rounded-xl bg-transparent hover:bg-white/10 border border-white/30 hover:border-white text-white text-xs font-semibold flex items-center gap-1 transition-all"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Save Note</span>

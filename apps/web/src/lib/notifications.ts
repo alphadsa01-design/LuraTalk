@@ -51,7 +51,7 @@ class NotificationManager {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
 
     if (Notification.permission === 'granted' && document.hidden) {
-      const notif = new Notification(`✨ Match Found!`, {
+      const notif = new Notification(`Match Found!`, {
         body: `You are connected with ${partnerName}. Tap to start talking!`,
         icon: '/favicon.ico',
         tag: 'luratalk-match',
