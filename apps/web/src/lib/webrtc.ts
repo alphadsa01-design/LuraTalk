@@ -31,6 +31,7 @@ class LuraWebRTCEngine {
   private localAnalyser: AnalyserNode | null = null;
   private remoteAnalyser: AnalyserNode | null = null;
   private remoteAudioSource: MediaStreamAudioSourceNode | null = null;
+  private remoteGainNode: GainNode | null = null;
   private animationFrameId: number | null = null;
 
   private isMuted: boolean = false;
@@ -429,17 +430,27 @@ class LuraWebRTCEngine {
   private setupRemoteAudioAnalysis(stream: MediaStream) {
     try {
       const ctx = this.getOrCreateAudioContext();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
       if (this.remoteAudioSource) {
         try {
           this.remoteAudioSource.disconnect();
         } catch {}
       }
-      const clonedStream = stream.clone();
-      this.remoteAudioSource = ctx.createMediaStreamSource(clonedStream);
+      this.remoteAudioSource = ctx.createMediaStreamSource(stream);
       this.remoteAnalyser = ctx.createAnalyser();
       this.remoteAnalyser.fftSize = 256;
       this.remoteAnalyser.smoothingTimeConstant = 0.4;
-      this.remoteAudioSource.connect(this.remoteAnalyser);
+
+      // Studio-Grade Voice Gain Booster (1.8x Gain Node for crisp, loud output)
+      if (!this.remoteGainNode) {
+        this.remoteGainNode = ctx.createGain();
+      }
+      this.remoteGainNode.gain.value = this.isDeafened ? 0 : 1.8;
+
+      this.remoteAudioSource.connect(this.remoteGainNode);
+      this.remoteGainNode.connect(this.remoteAnalyser);
     } catch (err) {
       console.warn('Remote AudioContext analysis setup failed', err);
     }
@@ -595,6 +606,12 @@ class LuraWebRTCEngine {
         this.remoteAudioSource.disconnect();
       } catch {}
       this.remoteAudioSource = null;
+    }
+    if (this.remoteGainNode) {
+      try {
+        this.remoteGainNode.disconnect();
+      } catch {}
+      this.remoteGainNode = null;
     }
     this.remoteStream = null;
     this.iceCandidatesQueue = [];
