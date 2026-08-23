@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useUserStore, AVATAR_PRESETS, getDicebearAvatarUrl } from '@/stores/useUserStore';
 import { getOrCreateAnonymousSession } from '@/lib/api';
+import { socketClient } from '@/lib/socket';
 import ProfileModal from '@/components/ProfileModal';
 import AudioSettingsModal from '@/components/AudioSettingsModal';
 import LuraLogo from '@/components/LuraLogo';
@@ -30,7 +31,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { user, avatarId, avatarSeed, setAuth, setAvatar, rollRandomAvatar, mood, intention } = useUserStore();
+  const { user, token, avatarId, avatarSeed, setAuth, setAvatar, rollRandomAvatar, mood, intention } = useUserStore();
   const [mounted, setMounted] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isFullProfileModalOpen, setIsFullProfileModalOpen] = useState(false);
@@ -42,18 +43,21 @@ export default function Navbar() {
 
   useEffect(() => {
     setMounted(true);
-    if (!user) {
+    if (!user || !token) {
       getOrCreateAnonymousSession()
         .then((data) => {
           if (data && data.token && data.user) {
             setAuth(data.token, data.user);
+            socketClient.connect(data.token);
           }
         })
         .catch((err) => {
           console.warn('Anonymous session init deferred', err);
         });
+    } else if (token) {
+      socketClient.connect(token);
     }
-  }, [user, setAuth]);
+  }, [user, token, setAuth]);
 
   // Close dropdown on outside click
   useEffect(() => {
