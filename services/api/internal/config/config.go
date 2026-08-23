@@ -66,7 +66,7 @@ func LoadConfig() *Config {
 	lkHost := getEnv("LIVEKIT_HOST", "http://localhost:7880")
 	lkAPIKey := getEnv("LIVEKIT_API_KEY", "devkey")
 	lkAPISecret := getEnv("LIVEKIT_API_SECRET", "secret_livekit_key_aura_voice_dev")
-	corsOrigins := getEnv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+	corsOrigins := getEnv("CORS_ORIGINS", "https://luratalk.vercel.app,http://localhost:3000,http://127.0.0.1:3000")
 	adminKey := getEnv("ADMIN_API_KEY", "aura_admin_master_secret_key_2026")
 	stunURL := getEnv("STUN_SERVER_URL", "stun:stun.l.google.com:19302")
 	webhookSecret := getEnv("PAYMENT_WEBHOOK_SECRET", "whsec_aura_payment_secret_2026")
@@ -106,7 +106,7 @@ func LoadConfig() *Config {
 
 func (c *Config) GetParsedAllowedOrigins() []string {
 	if c.CORSAllowedOrigins == "" {
-		return []string{"http://localhost:3000", "http://127.0.0.1:3000"}
+		return []string{"https://luratalk.vercel.app", "http://localhost:3000", "http://127.0.0.1:3000"}
 	}
 	parts := strings.Split(c.CORSAllowedOrigins, ",")
 	origins := make([]string, 0, len(parts))
@@ -120,12 +120,16 @@ func (c *Config) GetParsedAllowedOrigins() []string {
 }
 
 func (c *Config) IsOriginAllowed(origin string) bool {
-	if origin == "" || c.Environment != "production" {
-		return true // Allow all in local/development or non-browser
+	if origin == "" {
+		return true // Allow non-browser clients / tools
+	}
+	// Always allow all localhost, 127.0.0.1, and all Vercel domains (*.vercel.app)
+	if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") || strings.Contains(origin, ".vercel.app") || strings.Contains(origin, "luratalk") {
+		return true
 	}
 	allowed := c.GetParsedAllowedOrigins()
 	for _, a := range allowed {
-		if a == "*" || a == origin || strings.HasSuffix(origin, ".vercel.app") {
+		if a == "*" || a == origin {
 			return true
 		}
 	}

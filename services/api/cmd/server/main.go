@@ -84,13 +84,16 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 
-	// CORS Allowlist Defense (Strictly locked to configured origins)
+	// CORS Allowlist Defense (Dynamic match for all Vercel domains, localhost, & custom origins)
 	corsOpts := cors.Options{
+		AllowOriginFunc: func(r *http.Request, origin string) bool {
+			return cfg.IsOriginAllowed(origin)
+		},
 		AllowedOrigins:   cfg.GetParsedAllowedOrigins(),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Admin-Key", "Origin"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: false,
+		AllowCredentials: true,
 		MaxAge:           300,
 	}
 
