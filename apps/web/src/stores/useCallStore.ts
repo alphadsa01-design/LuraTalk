@@ -45,6 +45,11 @@ export interface CallState {
   icebreakerSuggestion: string | null;
   liveTranslationCaption: string | null;
 
+  isLocalScreenSharing: boolean;
+  isRemoteScreenSharing: boolean;
+  localScreenStream: MediaStream | null;
+  remoteScreenStream: MediaStream | null;
+
   autoConnectNext: boolean;
 
   setAutoConnectNext: (val: boolean) => void;
@@ -61,6 +66,8 @@ export interface CallState {
   setPeerTyping: (typing: boolean) => void;
   updateMysteryLevel: (level: number) => void;
   setIcebreaker: (suggestion: string) => void;
+  setLocalScreenSharing: (sharing: boolean, stream?: MediaStream | null) => void;
+  setRemoteScreenSharing: (sharing: boolean, stream?: MediaStream | null) => void;
   resetCall: () => void;
 }
 
@@ -84,6 +91,12 @@ export const useCallStore = create<CallState>((set) => ({
   isPeerTyping: false,
   icebreakerSuggestion: null,
   liveTranslationCaption: null,
+
+  isLocalScreenSharing: false,
+  isRemoteScreenSharing: false,
+  localScreenStream: null,
+  remoteScreenStream: null,
+
   autoConnectNext: true,
 
   setAutoConnectNext: (val) => set({ autoConnectNext: val }),
@@ -101,6 +114,10 @@ export const useCallStore = create<CallState>((set) => ({
       icebreakerSuggestion: data.icebreakerSuggestion || null,
       callDuration: 0,
       messages: [],
+      isLocalScreenSharing: false,
+      isRemoteScreenSharing: false,
+      localScreenStream: null,
+      remoteScreenStream: null,
     }),
 
   setStatus: (status) => set({ status }),
@@ -123,6 +140,10 @@ export const useCallStore = create<CallState>((set) => ({
       peer: state.peer ? { ...state.peer, mysteryLevel: level } : null,
     })),
   setIcebreaker: (suggestion) => set({ icebreakerSuggestion: suggestion }),
+  setLocalScreenSharing: (sharing, stream = null) =>
+    set({ isLocalScreenSharing: sharing, localScreenStream: stream }),
+  setRemoteScreenSharing: (sharing, stream = null) =>
+    set({ isRemoteScreenSharing: sharing, remoteScreenStream: stream }),
   resetCall: () =>
     set({
       status: 'idle',
@@ -140,5 +161,9 @@ export const useCallStore = create<CallState>((set) => ({
       isPeerTyping: false,
       icebreakerSuggestion: null,
       liveTranslationCaption: null,
+      isLocalScreenSharing: false,
+      isRemoteScreenSharing: false,
+      localScreenStream: null,
+      remoteScreenStream: null,
     }),
 }));

@@ -21,6 +21,8 @@ import {
   Radio,
   Sliders,
   Users,
+  ScreenShare,
+  ScreenShareOff,
   X,
 } from 'lucide-react';
 import { useUserStore, getDicebearAvatarUrl, AVATAR_PRESETS } from '@/stores/useUserStore';
@@ -37,6 +39,7 @@ import {
   acceptLocalFriendRequest,
 } from '@/lib/storage';
 import AudioVisualizer from '@/components/AudioVisualizer';
+import ScreenShareView from '@/components/ScreenShareView';
 import AIWidget from '@/components/AIWidget';
 import TranslationBar from '@/components/TranslationBar';
 import GameOverlay from '@/components/GameOverlay';
@@ -94,6 +97,10 @@ function MatchPageContent() {
     isPeerTyping,
     icebreakerSuggestion,
     liveTranslationCaption,
+    isLocalScreenSharing,
+    isRemoteScreenSharing,
+    localScreenStream,
+    remoteScreenStream,
     autoConnectNext,
     setAutoConnectNext,
     toggleAutoConnectNext,
@@ -539,6 +546,18 @@ function MatchPageContent() {
     webrtcEngine.setDeafened(nextDeafened);
   };
 
+  const handleToggleScreenShare = async () => {
+    if (isLocalScreenSharing) {
+      await webrtcEngine.stopScreenShare();
+    } else {
+      try {
+        await webrtcEngine.startScreenShare();
+      } catch (err: any) {
+        console.warn('[ScreenShare] Error or dismissed:', err);
+      }
+    }
+  };
+
   const handleRequestReveal = () => {
     socketClient.requestReveal();
   };
@@ -787,7 +806,7 @@ function MatchPageContent() {
 
               <button
                 onClick={handleNextMatch}
-                className="px-6 py-3 rounded-2xl bg-transparent hover:bg-white/10 text-white text-xs sm:text-sm font-bold border-2 border-white/40 hover:border-white hover:scale-105 active:scale-95 transition-all"
+                className="px-6 py-3 rounded-2xl bg-white hover:bg-neutral-200 text-black text-xs sm:text-sm font-extrabold shadow-lg shadow-white/20 hover:scale-105 active:scale-95 transition-all"
               >
                 Find Next Match ➔
               </button>
@@ -795,15 +814,37 @@ function MatchPageContent() {
           </div>
         ) : peer ? (
           <div className="space-y-3">
-            <AudioVisualizer
-              isSpeaking={isSpeaking}
-              peerSpeaking={peerSpeaking}
-              isMuted={isMuted}
-              isDeafened={isDeafened}
-              peerName={peer.username}
-              peerAvatar={peer.avatarId}
-              onEndCall={handleLeaveCall}
-            />
+            {isRemoteScreenSharing || isLocalScreenSharing ? (
+              <div className="space-y-2">
+                <ScreenShareView
+                  stream={isRemoteScreenSharing ? remoteScreenStream : localScreenStream}
+                  isLocal={isLocalScreenSharing}
+                  peerName={peer.username}
+                  onStopShare={() => webrtcEngine.stopScreenShare()}
+                />
+                <div className="glass-panel px-3 py-1.5 rounded-2xl border border-white/10 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${peerSpeaking ? 'bg-cyan-400 animate-pulse' : 'bg-neutral-500'}`} />
+                    <span className="text-neutral-300 font-medium">
+                      {peer.username} {peerSpeaking ? 'is speaking' : 'is connected'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-neutral-400 text-[11px]">
+                    <span>{isMuted ? 'Mic Muted' : 'Mic Live'}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <AudioVisualizer
+                isSpeaking={isSpeaking}
+                peerSpeaking={peerSpeaking}
+                isMuted={isMuted}
+                isDeafened={isDeafened}
+                peerName={peer.username}
+                peerAvatar={peer.avatarId}
+                onEndCall={handleLeaveCall}
+              />
+            )}
 
             {/* AI Icebreaker Card (Clean, Unobtrusive, Single-Line Strip) */}
             {icebreakerSuggestion && (
@@ -843,9 +884,9 @@ function MatchPageContent() {
             </div>
             <button
               onClick={() => handleStartQueue(initialMode)}
-              className="px-6 py-3 rounded-2xl bg-transparent hover:bg-white/10 text-white text-sm font-bold border-2 border-white/40 hover:border-white hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+              className="px-6 py-3 rounded-2xl bg-white hover:bg-neutral-200 text-black text-sm font-extrabold shadow-lg shadow-white/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
             >
-              <Radio className="w-4 h-4 text-white" />
+              <Radio className="w-4 h-4 text-black" />
               <span>Start Voice Match</span>
             </button>
           </div>
@@ -912,6 +953,23 @@ function MatchPageContent() {
             )}
           </button>
 
+          {/* Screen Share Button */}
+          <button
+            onClick={handleToggleScreenShare}
+            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
+              isLocalScreenSharing
+                ? 'bg-transparent text-secondary border-2 border-secondary scale-105 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
+                : 'bg-transparent hover:bg-white/10 text-neutral-200 border border-white/20 hover:border-white/40'
+            }`}
+            title={isLocalScreenSharing ? 'Stop Screen Sharing' : 'Share Screen'}
+          >
+            {isLocalScreenSharing ? (
+              <ScreenShareOff className="w-4 h-4 sm:w-5 sm:h-5 text-secondary" />
+            ) : (
+              <ScreenShare className="w-4 h-4 sm:w-5 sm:h-5" />
+            )}
+          </button>
+
           {/* In-Call Games Launcher Button */}
           <button
             onClick={() => setIsGameMenuOpen(!isGameMenuOpen)}
@@ -925,13 +983,13 @@ function MatchPageContent() {
             <Gamepad2 className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
 
-          {/* Next Match Button (Outline Style) */}
+          {/* Next Match Button (Primary & Prominent - White with Black Text) */}
           <button
             onClick={handleNextMatch}
-            className="flex-1 sm:flex-initial h-10 sm:h-11 min-w-[100px] sm:min-w-[120px] px-3 sm:px-4 rounded-2xl bg-transparent text-white text-xs sm:text-sm font-bold border-2 border-white/40 hover:border-white hover:bg-white/10 hover:scale-[1.03] active:scale-[0.97] transition-all flex items-center justify-center gap-1.5"
+            className="flex-1 sm:flex-initial h-10 sm:h-11 min-w-[105px] sm:min-w-[125px] px-3.5 sm:px-5 rounded-2xl bg-white text-black text-xs sm:text-sm font-extrabold shadow-lg shadow-white/20 hover:bg-neutral-200 hover:scale-[1.03] active:scale-[0.97] transition-all flex items-center justify-center gap-1.5"
             title="Find Next Match"
           >
-            <SkipForward className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+            <SkipForward className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black" />
             <span>Next</span>
           </button>
 

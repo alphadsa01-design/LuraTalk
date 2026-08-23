@@ -135,11 +135,11 @@ export default function LandingPage() {
           <button
             onClick={handleStartCall}
             disabled={isConnecting}
-            className="w-full py-4 px-8 rounded-2xl bg-transparent hover:bg-white/10 text-white border-2 border-white/40 hover:border-white text-base font-bold hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50 shadow-sm"
+            className="w-full py-4 px-8 rounded-2xl bg-white hover:bg-neutral-100 text-black text-base font-extrabold shadow-[0_0_35px_rgba(255,255,255,0.25)] hover:shadow-[0_0_45px_rgba(255,255,255,0.4)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
           >
-            <Radio className="w-5 h-5 text-white" />
+            <Radio className="w-5 h-5 text-black" />
             <span>{isConnecting ? 'Connecting...' : 'Start Talking'}</span>
-            <ArrowRight className="w-4 h-4 ml-0.5 text-white" />
+            <ArrowRight className="w-4 h-4 ml-0.5 text-black" />
           </button>
         )}
       </motion.div>

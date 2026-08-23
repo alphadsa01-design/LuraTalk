@@ -1,4 +1,4 @@
-// LuraTalk Real-Time Audio Engine: LiveKit SFU (Primary) + TURN WebRTC (Fallback)
+// LuraTalk Real-Time Audio & Screen Engine: LiveKit SFU (Primary) + TURN WebRTC (Fallback)
 
 import { socketClient } from '@/lib/socket';
 import { useCallStore } from '@/stores/useCallStore';
@@ -26,6 +26,10 @@ class LuraWebRTCEngine {
   private remoteStream: MediaStream | null = null;
   private remoteAudio: HTMLAudioElement | null = null;
   private unsubSignal: (() => void) | null = null;
+
+  // Screen Sharing State
+  private screenSender: RTCRtpSender | null = null;
+  private localScreenStream: MediaStream | null = null;
 
   // Audio Context & Analysis
   private audioCtx: AudioContext | null = null;
@@ -156,20 +160,33 @@ class LuraWebRTCEngine {
       adaptiveStream: true,
       dynacast: true,
       audioCaptureDefaults: {
+        autoGainControl: true,
         echoCancellation: true,
         noiseSuppression: true,
-        autoGainControl: true,
+      },
+      publishDefaults: {
+        simulcast: false,
+        videoCodec: 'vp8',
       },
     });
 
     this.livekitRoom = room;
 
-    room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _, participant: RemoteParticipant) => {
+    room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
       if (track.kind === Track.Kind.Audio && this.remoteAudio) {
         track.attach(this.remoteAudio);
         if (this.remoteAudio.srcObject instanceof MediaStream) {
           this.setupRemoteAudioAnalysis(this.remoteAudio.srcObject);
         }
+      } else if (track.kind === Track.Kind.Video) {
+        const stream = new MediaStream([track.mediaStreamTrack]);
+        useCallStore.getState().setRemoteScreenSharing(true, stream);
+      }
+    });
+
+    room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+      if (track.kind === Track.Kind.Video) {
+        useCallStore.getState().setRemoteScreenSharing(false, null);
       }
     });
 
@@ -181,7 +198,7 @@ class LuraWebRTCEngine {
       if (this.onPeerSpeakingChange) this.onPeerSpeakingChange(isRemoteSpeaking);
     });
 
-    // Try connecting with a 2-second timeout so fallback to TURN P2P WebRTC is fast & seamless
+    // Try connecting with a 2.5-second timeout so fallback to TURN P2P WebRTC is fast & seamless
     const connectPromise = room.connect(options.livekitUrl!, options.livekitToken!);
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('LiveKit connect timeout')), 2500)
@@ -247,36 +264,52 @@ class LuraWebRTCEngine {
       });
 
       this.pc.ontrack = (event) => {
+        const track = event.track;
         const stream =
           event.streams && event.streams[0]
             ? event.streams[0]
-            : new MediaStream([event.track]);
+            : new MediaStream([track]);
 
-        this.remoteStream = stream;
+        if (track.kind === 'audio') {
+          this.remoteStream = stream;
 
-        const audioEl = this.ensureRemoteAudioElement();
-        if (audioEl) {
-          audioEl.srcObject = stream;
-          audioEl.volume = 1.0;
-          audioEl.muted = this.isDeafened;
-          const playPromise = audioEl.play();
-          if (playPromise !== undefined) {
-            playPromise.catch((err) => {
-              console.warn('[WebRTC] Autoplay waiting for interaction:', err);
-              const unlockAudio = () => {
-                audioEl.play().catch(() => {});
-                window.removeEventListener('click', unlockAudio);
-                window.removeEventListener('touchstart', unlockAudio);
-                window.removeEventListener('keydown', unlockAudio);
-              };
-              window.addEventListener('click', unlockAudio, { once: true, passive: true });
-              window.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
-              window.addEventListener('keydown', unlockAudio, { once: true, passive: true });
-            });
+          const audioEl = this.ensureRemoteAudioElement();
+          if (audioEl) {
+            audioEl.srcObject = stream;
+            audioEl.volume = 1.0;
+            audioEl.muted = this.isDeafened;
+            const playPromise = audioEl.play();
+            if (playPromise !== undefined) {
+              playPromise.catch((err) => {
+                console.warn('[WebRTC] Autoplay waiting for interaction:', err);
+                const unlockAudio = () => {
+                  audioEl.play().catch(() => {});
+                  window.removeEventListener('click', unlockAudio);
+                  window.removeEventListener('touchstart', unlockAudio);
+                  window.removeEventListener('keydown', unlockAudio);
+                };
+                window.addEventListener('click', unlockAudio, { once: true, passive: true });
+                window.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+                window.addEventListener('keydown', unlockAudio, { once: true, passive: true });
+              });
+            }
           }
-        }
 
-        this.setupRemoteAudioAnalysis(stream);
+          this.setupRemoteAudioAnalysis(stream);
+        } else if (track.kind === 'video') {
+          // Remote Screen Share Video Track Received
+          useCallStore.getState().setRemoteScreenSharing(true, stream);
+
+          track.onended = () => {
+            useCallStore.getState().setRemoteScreenSharing(false, null);
+          };
+          track.onmute = () => {
+            // Track muted or paused
+          };
+          track.onunmute = () => {
+            useCallStore.getState().setRemoteScreenSharing(true, stream);
+          };
+        }
       };
 
       this.pc.onicecandidate = (event) => {
@@ -315,6 +348,7 @@ class LuraWebRTCEngine {
       if (options.isInitiator && this.pc.signalingState === 'stable') {
         const offer = await this.pc.createOffer({
           offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
         });
         if (offer.sdp) {
           offer.sdp = this.optimizeOpusSdp(offer.sdp);
@@ -356,6 +390,15 @@ class LuraWebRTCEngine {
 
   private async handleIncomingSignal(payload: any, isInitiator: boolean) {
     if (!payload || !payload.type) return;
+
+    if (payload.type === 'screen:stop') {
+      useCallStore.getState().setRemoteScreenSharing(false, null);
+      return;
+    }
+
+    if (payload.type === 'screen:start') {
+      return;
+    }
 
     if (!this.pc) {
       if (payload.type === 'offer') {
@@ -416,6 +459,134 @@ class LuraWebRTCEngine {
     } catch (err) {
       console.warn('[WebRTC] Handled WebRTC signal edge case:', err);
     }
+  }
+
+  public async startScreenShare(): Promise<MediaStream | null> {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
+      console.warn('Screen sharing is not supported on this browser');
+      return null;
+    }
+
+    try {
+      // LiveKit SFU Path
+      if (this.isUsingLiveKit && this.livekitRoom) {
+        await this.livekitRoom.localParticipant.setScreenShareEnabled(true, { audio: false });
+        const tracks = Array.from(this.livekitRoom.localParticipant.videoTrackPublications.values());
+        const screenPub = tracks.find((p) => p.source === Track.Source.ScreenShare);
+        if (screenPub && screenPub.track) {
+          const stream = new MediaStream([screenPub.track.mediaStreamTrack]);
+          this.localScreenStream = stream;
+          useCallStore.getState().setLocalScreenSharing(true, stream);
+          return stream;
+        }
+        useCallStore.getState().setLocalScreenSharing(true, null);
+        return null;
+      }
+
+      // P2P WebRTC Path (Universal cross-platform video capture without audio timeout)
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false,
+        });
+      } catch (firstErr: any) {
+        // Fallback for browsers requiring plain video constraint
+        if (firstErr.name === 'NotAllowedError') {
+          return null; // User simply clicked "Cancel" in browser picker
+        }
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+        });
+      }
+
+      this.localScreenStream = stream;
+      const videoTrack = stream.getVideoTracks()[0];
+
+      if (!videoTrack) {
+        return null;
+      }
+
+      // Handle user clicking native browser "Stop Sharing" floating bar
+      videoTrack.onended = () => {
+        this.stopScreenShare().catch(() => {});
+      };
+
+      if (this.pc) {
+        this.screenSender = this.pc.addTrack(videoTrack, stream);
+
+        if (this.pc.signalingState === 'stable') {
+          try {
+            const offer = await this.pc.createOffer();
+            if (offer.sdp) {
+              offer.sdp = this.optimizeOpusSdp(offer.sdp);
+            }
+            await this.pc.setLocalDescription(offer);
+            socketClient.send('webrtc:signal', {
+              type: 'offer',
+              offer: offer,
+            });
+          } catch (e) {
+            console.warn('[WebRTC] Renegotiation offer error', e);
+          }
+        }
+        socketClient.send('webrtc:signal', { type: 'screen:start' });
+      }
+
+      useCallStore.getState().setLocalScreenSharing(true, stream);
+      return stream;
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError') {
+        // User dismissed the screen share dialog - ignore quietly
+        return null;
+      }
+      if (err.name === 'AbortError') {
+        console.warn('[WebRTC] Screen sharing selection timed out or was dismissed');
+        return null;
+      }
+      console.warn('[WebRTC] Screen share error handled:', err);
+      return null;
+    }
+  }
+
+  public async stopScreenShare() {
+    if (this.localScreenStream) {
+      this.localScreenStream.getTracks().forEach((track) => track.stop());
+      this.localScreenStream = null;
+    }
+
+    if (this.isUsingLiveKit && this.livekitRoom) {
+      try {
+        await this.livekitRoom.localParticipant.setScreenShareEnabled(false);
+      } catch {}
+    } else if (this.pc) {
+      if (this.screenSender) {
+        try {
+          this.pc.removeTrack(this.screenSender);
+        } catch {}
+        this.screenSender = null;
+      }
+
+      socketClient.send('webrtc:signal', { type: 'screen:stop' });
+
+      if (this.pc.signalingState === 'stable') {
+        try {
+          const offer = await this.pc.createOffer();
+          if (offer.sdp) {
+            offer.sdp = this.optimizeOpusSdp(offer.sdp);
+          }
+          await this.pc.setLocalDescription(offer);
+          socketClient.send('webrtc:signal', {
+            type: 'offer',
+            offer: offer,
+          });
+        } catch (e) {
+          console.warn('[WebRTC] Renegotiation stop offer error', e);
+        }
+      }
+    }
+
+    useCallStore.getState().setLocalScreenSharing(false, null);
   }
 
   private getOrCreateAudioContext(): AudioContext {
@@ -595,6 +766,15 @@ class LuraWebRTCEngine {
 
   public cleanup() {
     this.isCalling = false;
+
+    // Stop active screen share on cleanup
+    if (this.localScreenStream) {
+      this.localScreenStream.getTracks().forEach((track) => track.stop());
+      this.localScreenStream = null;
+    }
+    this.screenSender = null;
+    useCallStore.getState().setLocalScreenSharing(false, null);
+    useCallStore.getState().setRemoteScreenSharing(false, null);
 
     if (this.livekitRoom) {
       this.livekitRoom.disconnect().catch(() => {});
