@@ -6,10 +6,6 @@ function getApiBase(): string {
         url = 'http://localhost:8080';
       } else {
         url = window.location.origin;
-        console.warn(
-          '[LuraTalk Config Warning] NEXT_PUBLIC_API_URL is not set in Vercel Environment Variables. Falling back to',
-          url
-        );
       }
     } else {
       url = 'http://localhost:8080';

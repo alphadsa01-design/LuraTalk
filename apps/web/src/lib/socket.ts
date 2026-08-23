@@ -33,8 +33,6 @@ class AuraSocketClient {
       }
     }
 
-    console.log('[LuraTalk WebSocket] Connecting to:', wsUrl);
-
     try {
       this.ws = new WebSocket(wsUrl, ['aura-auth', token]);
 

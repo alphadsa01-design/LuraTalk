@@ -12,26 +12,94 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'LuraTalk — Meet Someone Worth Talking To',
+  metadataBase: new URL('https://luratalk.vercel.app'),
+  title: {
+    default: 'LuraTalk — Anonymous Voice Calls & Conversations with Strangers',
+    template: '%s | LuraTalk',
+  },
   description:
-    'A privacy-first social platform for real-time voice and text conversations with smart matchmaking, AI icebreakers, and live translation.',
+    'Spontaneous, private 1-on-1 voice calls with strangers worldwide. 100% anonymous, sub-100ms ultra-low latency, no sign-ups or tracking required.',
+  keywords: [
+    'anonymous voice chat',
+    'talk to strangers',
+    'random voice call',
+    'voice call online',
+    'free stranger talk',
+    'private audio chat',
+    'instant voice matchmaking',
+    'omegle alternative voice',
+    'luratalk',
+    'real-time voice communication',
+  ],
+  authors: [{ name: 'LuraTalk Team', url: 'https://luratalk.vercel.app' }],
+  creator: 'LuraTalk',
+  publisher: 'LuraTalk',
+  alternates: {
+    canonical: 'https://luratalk.vercel.app',
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
   openGraph: {
-    title: 'LuraTalk — Anonymous Real-Time Voice Conversations',
-    description: 'Connect with kindred spirits worldwide through instant voice matches and community topic lounges.',
+    title: 'LuraTalk — Anonymous Real-Time Voice Calls with Strangers',
+    description:
+      'Spontaneous, private 1-on-1 voice calls with strangers worldwide. 100% anonymous, zero tracking, sub-100ms audio.',
     url: 'https://luratalk.vercel.app',
     siteName: 'LuraTalk',
     type: 'website',
+    locale: 'en_US',
+    images: [
+      {
+        url: '/icon.svg',
+        width: 512,
+        height: 512,
+        alt: 'LuraTalk Logo',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'LuraTalk — Anonymous Voice Match & Lounges',
-    description: 'Instant, privacy-first voice conversations matched by shared interests.',
+    title: 'LuraTalk — Anonymous Voice Calls & Matchmaking',
+    description: 'Instant, private 1-on-1 voice conversations with strangers around the globe.',
+    images: ['/icon.svg'],
   },
   icons: {
     icon: '/icon.svg',
     shortcut: '/icon.svg',
     apple: '/icon.svg',
   },
+  manifest: '/manifest.webmanifest',
+};
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'LuraTalk',
+  url: 'https://luratalk.vercel.app',
+  description:
+    'Spontaneous, private 1-on-1 voice calls with strangers worldwide. 100% anonymous, no sign-ups or tracking required.',
+  applicationCategory: 'CommunicationApplication',
+  operatingSystem: 'All',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+  },
+  featureList: [
+    'Anonymous 1-on-1 Voice Calls',
+    'Real-time WebRTC Audio',
+    'Sub-100ms Low Latency Matchmaking',
+    'Zero Tracking & No Sign-up',
+    'HD Opus Audio Quality',
+  ],
 };
 
 export const viewport: Viewport = {
@@ -47,6 +115,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`h-full w-full overflow-x-hidden ${inter.variable}`}>
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body className={`min-h-full w-full overflow-x-hidden flex flex-col bg-background text-foreground selection:bg-primary selection:text-white antialiased font-sans ${inter.className}`}>
         {/* Ambient Cosmic Glowing Background Lighting */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
