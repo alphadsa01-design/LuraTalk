@@ -107,6 +107,14 @@ class LuraWebRTCEngine {
     }
   }
 
+  public setSpeakingCallbacks(
+    onSpeakingChange?: (isSpeaking: boolean) => void,
+    onPeerSpeakingChange?: (isPeerSpeaking: boolean) => void
+  ) {
+    if (onSpeakingChange) this.onSpeakingChange = onSpeakingChange;
+    if (onPeerSpeakingChange) this.onPeerSpeakingChange = onPeerSpeakingChange;
+  }
+
   public async startCall(options: WebRTCVoiceOptions) {
     this.cleanup();
     this.isCalling = true;

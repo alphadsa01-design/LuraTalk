@@ -63,7 +63,7 @@ export default function FloatingCallOverlay() {
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={{ y: 50, opacity: 0, scale: 0.95 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-50 max-w-sm sm:max-w-md w-[calc(100%-2rem)] sm:w-auto glass-panel-glow border border-primary/40 rounded-2xl p-3 shadow-2xl backdrop-blur-2xl flex items-center justify-between gap-3"
+          className="fixed bottom-24 sm:bottom-6 right-3 sm:right-6 z-[60] max-w-sm sm:max-w-md w-[calc(100%-1.5rem)] sm:w-auto glass-panel-glow border border-primary/40 rounded-2xl p-3 shadow-2xl backdrop-blur-2xl flex items-center justify-between gap-3"
         >
           {/* Peer & Call Info */}
           <div

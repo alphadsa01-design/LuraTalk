@@ -18,6 +18,7 @@ import {
   Languages,
   Radio,
   Sliders,
+  Users,
   X,
 } from 'lucide-react';
 import { useUserStore, getDicebearAvatarUrl, AVATAR_PRESETS } from '@/stores/useUserStore';
@@ -197,14 +198,23 @@ function MatchPageContent() {
       }
 
       const acceptedCall = searchParams?.get('acceptedCall') === '1';
+      const currentCallState = useCallStore.getState();
+
+      // If user is returning to an already matched active call (e.g. from Floating Overlay), resume view without interrupting call
+      if (currentCallState.status === 'matched') {
+        webrtcEngine.setSpeakingCallbacks(
+          (spk) => setSpeaking(spk),
+          (peerSpk) => setPeerSpeaking(peerSpk)
+        );
+        return;
+      }
 
       // If accepted direct call, immediately start WebRTC audio
       if (acceptedCall) {
-        const callStore = useCallStore.getState();
-        if (callStore.roomName) {
+        if (currentCallState.roomName) {
           webrtcEngine.startCall({
             isInitiator: false,
-            roomName: callStore.roomName,
+            roomName: currentCallState.roomName,
             onSpeakingChange: (spk) => setSpeaking(spk),
             onPeerSpeakingChange: (peerSpk) => setPeerSpeaking(peerSpk),
             onDisconnected: () => {
@@ -578,21 +588,42 @@ function MatchPageContent() {
   return (
     <div className="max-w-3xl mx-auto px-3 sm:px-6 py-4 sm:py-8 min-h-[calc(100dvh-4.5rem)] pb-32 sm:pb-16 flex flex-col justify-between">
       {/* Sleek Top Status Header */}
-      <div className="flex items-center justify-between glass-panel px-4 py-2.5 rounded-2xl border border-white/10 mb-4 sm:mb-6">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleCancelSearch}
-            className="text-xs font-semibold text-neutral-400 hover:text-white transition-colors flex items-center gap-1 p-1 rounded-lg hover:bg-white/5"
-            title="Return to Home"
-          >
-            <span>← Home</span>
-          </button>
+      <div className="flex items-center justify-between glass-panel px-3 sm:px-4 py-2.5 rounded-2xl border border-white/10 mb-4 sm:mb-6 gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          {status === 'matched' ? (
+            <>
+              <button
+                onClick={() => router.push('/')}
+                className="text-xs font-semibold text-neutral-300 hover:text-white transition-colors flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10"
+                title="Minimize call to floating window"
+              >
+                <span>← Minimize</span>
+              </button>
+
+              <button
+                onClick={() => router.push('/friends')}
+                className="text-xs font-semibold text-neutral-300 hover:text-white transition-colors flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10"
+                title="View Friends while staying in call"
+              >
+                <Users className="w-3.5 h-3.5 text-secondary" />
+                <span>Friends</span>
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleCancelSearch}
+              className="text-xs font-semibold text-neutral-400 hover:text-white transition-colors flex items-center gap-1 p-1 rounded-lg hover:bg-white/5"
+              title="Cancel and return home"
+            >
+              <span>← Cancel</span>
+            </button>
+          )}
 
           <span className="h-3.5 w-px bg-white/10" />
 
           {status === 'matched' ? (
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs font-mono font-bold text-white tracking-wider">
                 {formatDuration(callDuration)}
               </span>

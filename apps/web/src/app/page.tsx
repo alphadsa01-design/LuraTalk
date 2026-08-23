@@ -11,13 +11,15 @@ import { motion } from 'framer-motion';
 export default function LandingPage() {
   const router = useRouter();
   const { token, setAuth } = useUserStore();
-  const { resetCall } = useCallStore();
+  const { status, peer, resetCall } = useCallStore();
   const [onlineCount, setOnlineCount] = useState<number>(1);
   const [isConnecting, setIsConnecting] = useState(false);
 
   useEffect(() => {
     setIsConnecting(false);
-    resetCall();
+    if (useCallStore.getState().status !== 'matched') {
+      resetCall();
+    }
 
     async function initSession() {
       if (!token) {
@@ -95,15 +97,26 @@ export default function LandingPage() {
         transition={{ delay: 0.3 }}
         className="mt-8 sm:mt-10 w-full max-w-xs flex flex-col items-center gap-4"
       >
-        <button
-          onClick={handleStartCall}
-          disabled={isConnecting}
-          className="w-full py-4 px-8 rounded-2xl bg-white hover:bg-neutral-200 text-black text-base font-extrabold shadow-[0_0_30px_rgba(255,255,255,0.18)] hover:shadow-[0_0_40px_rgba(255,255,255,0.30)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
-        >
-          <Radio className="w-5 h-5 text-black" />
-          <span>{isConnecting ? 'Connecting...' : 'Start Talking'}</span>
-          <ArrowRight className="w-4 h-4 ml-0.5 text-black" />
-        </button>
+        {status === 'matched' ? (
+          <button
+            onClick={() => router.push('/match?mode=voice')}
+            className="w-full py-4 px-8 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white text-base font-extrabold shadow-[0_0_30px_rgba(16,185,129,0.35)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 cursor-pointer animate-pulse"
+          >
+            <Radio className="w-5 h-5 text-white" />
+            <span>Return to Call ({peer?.username || 'Partner'})</span>
+            <ArrowRight className="w-4 h-4 ml-0.5 text-white" />
+          </button>
+        ) : (
+          <button
+            onClick={handleStartCall}
+            disabled={isConnecting}
+            className="w-full py-4 px-8 rounded-2xl bg-white hover:bg-neutral-200 text-black text-base font-extrabold shadow-[0_0_30px_rgba(255,255,255,0.18)] hover:shadow-[0_0_40px_rgba(255,255,255,0.30)] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
+          >
+            <Radio className="w-5 h-5 text-black" />
+            <span>{isConnecting ? 'Connecting...' : 'Start Talking'}</span>
+            <ArrowRight className="w-4 h-4 ml-0.5 text-black" />
+          </button>
+        )}
       </motion.div>
 
       {/* Thoughtful, Inspiring Quote Card */}
