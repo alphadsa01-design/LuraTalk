@@ -27,9 +27,11 @@ class LuraWebRTCEngine {
   private remoteAudio: HTMLAudioElement | null = null;
   private unsubSignal: (() => void) | null = null;
 
-  // Screen Sharing State
+  // Screen & Mobile Visual Sharing State
   private screenSender: RTCRtpSender | null = null;
   private localScreenStream: MediaStream | null = null;
+  private isCameraMode: boolean = false;
+  private currentFacingMode: 'user' | 'environment' = 'environment';
 
   // Audio Context & Analysis
   private audioCtx: AudioContext | null = null;
@@ -461,9 +463,9 @@ class LuraWebRTCEngine {
     }
   }
 
-  public async startScreenShare(): Promise<MediaStream | null> {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
-      console.warn('Screen sharing is not supported on this browser');
+  public async startScreenShare(options?: { forceCamera?: boolean }): Promise<MediaStream | null> {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+      console.warn('Media devices are not supported on this browser');
       return null;
     }
 
@@ -476,30 +478,48 @@ class LuraWebRTCEngine {
         if (screenPub && screenPub.track) {
           const stream = new MediaStream([screenPub.track.mediaStreamTrack]);
           this.localScreenStream = stream;
-          useCallStore.getState().setLocalScreenSharing(true, stream);
+          useCallStore.getState().setLocalScreenSharing(true, stream, false);
           return stream;
         }
-        useCallStore.getState().setLocalScreenSharing(true, null);
+        useCallStore.getState().setLocalScreenSharing(true, null, false);
         return null;
       }
 
-      // P2P WebRTC Path (Universal cross-platform video capture without audio timeout)
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: false,
-        });
-      } catch (firstErr: any) {
-        // Fallback for browsers requiring plain video constraint
-        if (firstErr.name === 'NotAllowedError') {
-          return null; // User simply clicked "Cancel" in browser picker
+      // P2P WebRTC Path: Check for native screen capture, fallback gracefully to mobile camera on iOS/unsupported devices
+      let stream: MediaStream | null = null;
+      let isCamera = false;
+
+      const hasDisplayMedia = !options?.forceCamera && typeof navigator.mediaDevices.getDisplayMedia === 'function';
+
+      if (hasDisplayMedia) {
+        try {
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: false,
+          });
+          isCamera = false;
+        } catch (firstErr: any) {
+          if (firstErr.name === 'NotAllowedError') {
+            return null; // User clicked Cancel in browser picker
+          }
+          console.warn('[WebRTC] getDisplayMedia unavailable on this device, using camera fallback:', firstErr);
         }
-        stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-        });
       }
 
+      // Fallback for iOS (iPhone/iPad) Safari, Android in-app browsers, or camera mode
+      if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: this.currentFacingMode },
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+          },
+          audio: false,
+        });
+        isCamera = true;
+      }
+
+      this.isCameraMode = isCamera;
       this.localScreenStream = stream;
       const videoTrack = stream.getVideoTracks()[0];
 
@@ -533,23 +553,52 @@ class LuraWebRTCEngine {
         socketClient.send('webrtc:signal', { type: 'screen:start' });
       }
 
-      useCallStore.getState().setLocalScreenSharing(true, stream);
+      useCallStore.getState().setLocalScreenSharing(true, stream, isCamera);
       return stream;
     } catch (err: any) {
       if (err.name === 'NotAllowedError') {
-        // User dismissed the screen share dialog - ignore quietly
+        // User dismissed dialog - ignore quietly
         return null;
       }
       if (err.name === 'AbortError') {
-        console.warn('[WebRTC] Screen sharing selection timed out or was dismissed');
+        console.warn('[WebRTC] Screen/Camera sharing selection timed out or was dismissed');
         return null;
       }
-      console.warn('[WebRTC] Screen share error handled:', err);
+      console.warn('[WebRTC] Screen/Camera share error handled:', err);
       return null;
     }
   }
 
+  public async flipCamera(): Promise<boolean> {
+    if (!this.localScreenStream) return false;
+    try {
+      this.currentFacingMode = this.currentFacingMode === 'user' ? 'environment' : 'user';
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: this.currentFacingMode },
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+        },
+        audio: false,
+      });
+      const newTrack = newStream.getVideoTracks()[0];
+      if (!newTrack) return false;
+
+      if (this.screenSender) {
+        await this.screenSender.replaceTrack(newTrack);
+      }
+      this.localScreenStream.getVideoTracks().forEach((t) => t.stop());
+      this.localScreenStream = newStream;
+      useCallStore.getState().setLocalScreenSharing(true, newStream, true);
+      return true;
+    } catch (err) {
+      console.warn('[WebRTC] Flip camera error:', err);
+      return false;
+    }
+  }
+
   public async stopScreenShare() {
+    this.isCameraMode = false;
     if (this.localScreenStream) {
       this.localScreenStream.getTracks().forEach((track) => track.stop());
       this.localScreenStream = null;
@@ -586,7 +635,7 @@ class LuraWebRTCEngine {
       }
     }
 
-    useCallStore.getState().setLocalScreenSharing(false, null);
+    useCallStore.getState().setLocalScreenSharing(false, null, false);
   }
 
   private getOrCreateAudioContext(): AudioContext {

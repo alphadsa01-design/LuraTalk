@@ -99,6 +99,7 @@ function MatchPageContent() {
     liveTranslationCaption,
     isLocalScreenSharing,
     isRemoteScreenSharing,
+    isCameraMode,
     localScreenStream,
     remoteScreenStream,
     autoConnectNext,
@@ -819,8 +820,10 @@ function MatchPageContent() {
                 <ScreenShareView
                   stream={isRemoteScreenSharing ? remoteScreenStream : localScreenStream}
                   isLocal={isLocalScreenSharing}
+                  isCameraMode={isCameraMode}
                   peerName={peer.username}
                   onStopShare={() => webrtcEngine.stopScreenShare()}
+                  onFlipCamera={() => webrtcEngine.flipCamera()}
                 />
                 <div className="glass-panel px-3 py-1.5 rounded-2xl border border-white/10 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
