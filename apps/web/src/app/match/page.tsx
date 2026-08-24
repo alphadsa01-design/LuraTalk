@@ -99,7 +99,6 @@ function MatchPageContent() {
     liveTranslationCaption,
     isLocalScreenSharing,
     isRemoteScreenSharing,
-    isCameraMode,
     localScreenStream,
     remoteScreenStream,
     autoConnectNext,
@@ -125,6 +124,7 @@ function MatchPageContent() {
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
   const [friendRequested, setFriendRequested] = useState(false);
   const friendRequestedRef = useRef(false);
+  const [screenShareToast, setScreenShareToast] = useState<string | null>(null);
 
   const updateFriendRequested = (val: boolean) => {
     friendRequestedRef.current = val;
@@ -548,13 +548,21 @@ function MatchPageContent() {
   };
 
   const handleToggleScreenShare = async () => {
+    setScreenShareToast(null);
     if (isLocalScreenSharing) {
       await webrtcEngine.stopScreenShare();
     } else {
       try {
         await webrtcEngine.startScreenShare();
       } catch (err: any) {
-        console.warn('[ScreenShare] Error or dismissed:', err);
+        if (err.message === 'UNSUPPORTED_BROWSER') {
+          setScreenShareToast(
+            'Screen sharing is not supported by mobile Safari / WebKit. You can still view incoming screen shares from others!'
+          );
+          setTimeout(() => setScreenShareToast(null), 6000);
+        } else {
+          console.warn('[ScreenShare] Error or dismissed:', err);
+        }
       }
     }
   };
@@ -820,10 +828,8 @@ function MatchPageContent() {
                 <ScreenShareView
                   stream={isRemoteScreenSharing ? remoteScreenStream : localScreenStream}
                   isLocal={isLocalScreenSharing}
-                  isCameraMode={isCameraMode}
                   peerName={peer.username}
                   onStopShare={() => webrtcEngine.stopScreenShare()}
-                  onFlipCamera={() => webrtcEngine.flipCamera()}
                 />
                 <div className="glass-panel px-3 py-1.5 rounded-2xl border border-white/10 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
@@ -1083,6 +1089,19 @@ function MatchPageContent() {
         isOpen={isAudioSettingsOpen}
         onClose={() => setIsAudioSettingsOpen(false)}
       />
+
+      {/* Screen Share Notice Toast */}
+      {screenShareToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-2xl bg-neutral-900/95 backdrop-blur-xl border border-white/20 text-white text-xs font-medium text-center shadow-2xl max-w-sm mx-auto flex items-center gap-2">
+          <span>{screenShareToast}</span>
+          <button
+            onClick={() => setScreenShareToast(null)}
+            className="text-neutral-400 hover:text-white ml-2 text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }

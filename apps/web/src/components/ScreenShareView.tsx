@@ -1,29 +1,24 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Monitor, Camera, Maximize2, Minimize2, StopCircle, RefreshCw } from 'lucide-react';
+import { Monitor, Maximize2, Minimize2, StopCircle } from 'lucide-react';
 
 interface ScreenShareViewProps {
   stream: MediaStream | null;
   isLocal: boolean;
-  isCameraMode?: boolean;
   peerName: string;
   onStopShare: () => void;
-  onFlipCamera?: () => void;
 }
 
 export default function ScreenShareView({
   stream,
   isLocal,
-  isCameraMode = false,
   peerName,
   onStopShare,
-  onFlipCamera,
 }: ScreenShareViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isFlipping, setIsFlipping] = useState(false);
 
   useEffect(() => {
     if (videoRef.current && stream) {
@@ -59,14 +54,6 @@ export default function ScreenShareView({
     }
   };
 
-  const handleFlip = async () => {
-    if (onFlipCamera && !isFlipping) {
-      setIsFlipping(true);
-      await onFlipCamera();
-      setTimeout(() => setIsFlipping(false), 500);
-    }
-  };
-
   return (
     <div
       ref={containerRef}
@@ -87,46 +74,27 @@ export default function ScreenShareView({
         <div className="pointer-events-auto flex items-center gap-2">
           {isLocal ? (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/60 backdrop-blur-md border border-white/20 text-white text-xs font-semibold shadow-lg">
-              {isCameraMode ? (
-                <>
-                  <Camera className="w-3.5 h-3.5 text-white" />
-                  <span>Sharing Live Camera</span>
-                </>
-              ) : (
-                <>
-                  <Monitor className="w-3.5 h-3.5 text-white" />
-                  <span>Sharing Screen</span>
-                </>
-              )}
+              <Monitor className="w-3.5 h-3.5 text-white" />
+              <span>You are sharing your screen</span>
             </div>
           ) : (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/60 backdrop-blur-md border border-white/20 text-white text-xs font-semibold shadow-lg">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>{peerName}&apos;s Live Video (HD)</span>
+              <span>{peerName}&apos;s Screen (Live HD)</span>
             </div>
           )}
         </div>
 
         {/* Action Controls */}
         <div className="pointer-events-auto flex items-center gap-2">
-          {isLocal && isCameraMode && onFlipCamera && (
-            <button
-              onClick={handleFlip}
-              className="p-2 rounded-xl bg-transparent hover:bg-white/10 text-white border border-white/20 transition-all shadow-lg active:scale-95 flex items-center gap-1"
-              title="Flip Front / Back Camera"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isFlipping ? 'animate-spin' : ''}`} />
-            </button>
-          )}
-
           {isLocal && (
             <button
               onClick={onStopShare}
               className="px-3 py-1.5 rounded-xl bg-transparent hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg active:scale-95"
-              title="Stop Sharing"
+              title="Stop Screen Sharing"
             >
               <StopCircle className="w-3.5 h-3.5 text-rose-300" />
-              <span>Stop</span>
+              <span>Stop Sharing</span>
             </button>
           )}
 

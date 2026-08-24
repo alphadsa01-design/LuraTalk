@@ -47,7 +47,6 @@ export interface CallState {
 
   isLocalScreenSharing: boolean;
   isRemoteScreenSharing: boolean;
-  isCameraMode: boolean;
   localScreenStream: MediaStream | null;
   remoteScreenStream: MediaStream | null;
 
@@ -67,7 +66,7 @@ export interface CallState {
   setPeerTyping: (typing: boolean) => void;
   updateMysteryLevel: (level: number) => void;
   setIcebreaker: (suggestion: string) => void;
-  setLocalScreenSharing: (sharing: boolean, stream?: MediaStream | null, isCamera?: boolean) => void;
+  setLocalScreenSharing: (sharing: boolean, stream?: MediaStream | null) => void;
   setRemoteScreenSharing: (sharing: boolean, stream?: MediaStream | null) => void;
   resetCall: () => void;
 }
@@ -95,7 +94,6 @@ export const useCallStore = create<CallState>((set) => ({
 
   isLocalScreenSharing: false,
   isRemoteScreenSharing: false,
-  isCameraMode: false,
   localScreenStream: null,
   remoteScreenStream: null,
 
@@ -118,7 +116,6 @@ export const useCallStore = create<CallState>((set) => ({
       messages: [],
       isLocalScreenSharing: false,
       isRemoteScreenSharing: false,
-      isCameraMode: false,
       localScreenStream: null,
       remoteScreenStream: null,
     }),
@@ -143,8 +140,8 @@ export const useCallStore = create<CallState>((set) => ({
       peer: state.peer ? { ...state.peer, mysteryLevel: level } : null,
     })),
   setIcebreaker: (suggestion) => set({ icebreakerSuggestion: suggestion }),
-  setLocalScreenSharing: (sharing, stream = null, isCamera = false) =>
-    set({ isLocalScreenSharing: sharing, localScreenStream: stream, isCameraMode: isCamera }),
+  setLocalScreenSharing: (sharing, stream = null) =>
+    set({ isLocalScreenSharing: sharing, localScreenStream: stream }),
   setRemoteScreenSharing: (sharing, stream = null) =>
     set({ isRemoteScreenSharing: sharing, remoteScreenStream: stream }),
   resetCall: () =>
@@ -166,7 +163,6 @@ export const useCallStore = create<CallState>((set) => ({
       liveTranslationCaption: null,
       isLocalScreenSharing: false,
       isRemoteScreenSharing: false,
-      isCameraMode: false,
       localScreenStream: null,
       remoteScreenStream: null,
     }),
