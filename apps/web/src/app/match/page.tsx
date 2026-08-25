@@ -88,6 +88,7 @@ function MatchPageContent() {
     status,
     mode,
     peer,
+    isInitiator,
     isMuted,
     isDeafened,
     isSpeaking,
@@ -118,7 +119,7 @@ function MatchPageContent() {
     resetCall,
   } = useCallStore();
 
-  const { openGame, updateGameState } = useGameStore();
+  const { openGame, updateGameState, closeGame, resetGame } = useGameStore();
 
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
@@ -211,8 +212,8 @@ function MatchPageContent() {
       const acceptedCall = searchParams?.get('acceptedCall') === '1';
       const currentCallState = useCallStore.getState();
 
-      // If user is returning to an already matched active call (e.g. from Floating Overlay), resume view without interrupting call
-      if (currentCallState.status === 'matched') {
+      // If user is returning to an already matched active call (e.g. from Floating Overlay), resume view seamlessly without interrupting call
+      if (currentCallState.status === 'matched' || currentCallState.status === 'in_call') {
         webrtcEngine.setSpeakingCallbacks(
           (spk) => setSpeaking(spk),
           (peerSpk) => setPeerSpeaking(peerSpk)
@@ -282,6 +283,7 @@ function MatchPageContent() {
       webrtcEngine.cleanup();
       sounds.playEndCall();
       updateFriendRequested(false);
+      resetGame();
       resetCall();
       setStatus('searching');
       const currentMode = useCallStore.getState().mode || initialMode || 'voice';
@@ -409,7 +411,8 @@ function MatchPageContent() {
     return () => {
       isMounted = false;
       const currentStatus = useCallStore.getState().status;
-      if (currentStatus !== 'matched') {
+      // Only tear down audio and queue if user was NOT in an active call (active calls persist in FloatingCallOverlay)
+      if (currentStatus !== 'matched' && currentStatus !== 'in_call') {
         webrtcEngine.cleanup();
         socketClient.leaveQueue();
       }
@@ -467,6 +470,7 @@ function MatchPageContent() {
     sounds.playSkip();
     webrtcEngine.cleanup();
     updateFriendRequested(false);
+    resetGame();
     resetCall();
     setStatus('searching');
     socketClient.nextMatch(mode, {
@@ -507,6 +511,7 @@ function MatchPageContent() {
     socketClient.send('call:end', {});
     socketClient.leaveQueue();
     updateFriendRequested(false);
+    resetGame();
     resetCall();
     setStatus('idle');
     router.push('/');
@@ -519,6 +524,7 @@ function MatchPageContent() {
       socketClient.cancelDirectCall(callPartnerId);
     }
     socketClient.leaveQueue();
+    resetGame();
     resetCall();
     setDirectCallState('idle');
     setStatus('idle');
@@ -1085,6 +1091,7 @@ function MatchPageContent() {
       <GameOverlay
         currentUserId={user?.id || ''}
         peerName={peer?.username || 'Partner'}
+        isInitiator={isInitiator ?? true}
         onSendAction={(actionType, gameType, data) =>
           socketClient.sendGameAction(actionType, gameType, data)
         }
@@ -1105,27 +1112,29 @@ function MatchPageContent() {
         onClose={() => setIsAudioSettingsOpen(false)}
       />
 
-      {/* Screen Share Notice Toast */}
+      {/* Screen Share Notice Toast - Responsive Mobile Centered */}
       {screenShareToast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-2xl bg-neutral-900/95 backdrop-blur-xl border border-white/20 text-white text-xs font-medium text-center shadow-2xl max-w-sm mx-auto flex items-center gap-2">
-          <span>{screenShareToast}</span>
+        <div className="fixed bottom-28 sm:bottom-24 left-0 right-0 mx-auto z-50 w-[calc(100%-2rem)] max-w-sm px-4 py-3 rounded-2xl bg-neutral-950/95 backdrop-blur-2xl border border-white/20 text-white text-xs font-medium shadow-2xl flex items-center justify-between gap-3 animate-fade-in">
+          <span className="leading-snug text-left">{screenShareToast}</span>
           <button
             onClick={() => setScreenShareToast(null)}
-            className="text-neutral-400 hover:text-white ml-2 text-xs"
+            className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-neutral-400 hover:text-white bg-white/5 border border-white/10 hover:border-white/20 transition-all text-xs"
           >
             ✕
           </button>
         </div>
       )}
 
-      {/* Microphone Permission Required Banner */}
+      {/* Microphone Permission Required Banner - Responsive Mobile Centered */}
       {micPermissionDenied && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-2xl bg-black/95 backdrop-blur-xl border border-rose-500/50 text-white text-xs font-semibold text-center shadow-2xl max-w-md mx-auto flex items-center gap-2.5 animate-bounce">
+        <div className="fixed top-16 sm:top-20 left-0 right-0 mx-auto z-50 w-[calc(100%-2rem)] max-w-md px-4 py-3 rounded-2xl bg-neutral-950/95 backdrop-blur-2xl border border-rose-500/50 text-white text-xs font-medium shadow-2xl flex items-center gap-3 animate-fade-in">
           <MicOff className="w-4 h-4 text-rose-400 shrink-0" />
-          <span>Microphone access was blocked. Please click the lock or camera/mic icon in your address bar to allow permissions and refresh.</span>
+          <span className="leading-snug text-left flex-1">
+            Microphone access was blocked. Please click the lock or camera icon in your address bar to allow permissions and refresh.
+          </span>
           <button
             onClick={() => setMicPermissionDenied(false)}
-            className="text-neutral-400 hover:text-white ml-auto text-xs"
+            className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-neutral-400 hover:text-white bg-white/5 border border-white/10 hover:border-white/20 transition-all text-xs"
           >
             ✕
           </button>

@@ -22,18 +22,24 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { sounds } from '@/lib/sounds';
 
 interface GameOverlayProps {
-  currentUserId: string;
+  currentUserId?: string;
   peerName?: string;
-  onSendAction: (actionType: string, gameType?: string, data?: any) => void;
+  isInitiator?: boolean;
+  onSendAction: (actionType: string, gameType: GameType, data?: any) => void;
 }
 
 const WINNING_COMBOS = [
-  [0, 1, 2], [3, 4, 5], [6, 7, 8], // Rows
-  [0, 3, 6], [1, 4, 7], [2, 5, 8], // Columns
-  [0, 4, 8], [2, 4, 6],           // Diagonals
+  [0, 1, 2],
+  [3, 4, 5],
+  [6, 7, 8],
+  [0, 3, 6],
+  [1, 4, 7],
+  [2, 5, 8],
+  [0, 4, 8],
+  [2, 4, 6],
 ];
 
-function checkWinner(board: string[]): { winner: string | null; line: number[] | null } {
+function checkWinner(board: string[]) {
   for (const combo of WINNING_COMBOS) {
     const [a, b, c] = combo;
     if (board[a] && board[a] === board[b] && board[a] === board[c]) {
@@ -48,6 +54,7 @@ const REACTION_EMOJIS = ['🔥', '💀', '😱', '🤫', '🤯', '🤐'];
 export default function GameOverlay({
   currentUserId,
   peerName = 'Partner',
+  isInitiator = true,
   onSendAction,
 }: GameOverlayProps) {
   const {
@@ -78,36 +85,29 @@ export default function GameOverlay({
     customData?.card || DEFAULT_WYR_CARDS[localCardIndex % DEFAULT_WYR_CARDS.length];
 
   // --- TIC-TAC-TOE TURN & SYMBOL LOGIC ---
-  const isPlayer1 = players.length >= 2 ? currentUserId === players[0] : true;
-  const mySymbol: 'X' | 'O' = isPlayer1 ? 'X' : 'O';
-  const peerSymbol: 'X' | 'O' = mySymbol === 'X' ? 'O' : 'X';
+  // Initiator is always 'X' (goes first), Receiver is always 'O' (goes second)
+  const mySymbol: 'X' | 'O' = isInitiator ? 'X' : 'O';
+  const peerSymbol: 'X' | 'O' = isInitiator ? 'O' : 'X';
 
   const filledCount = board.filter((c) => c !== '').length;
   const currentTurnSymbol: 'X' | 'O' = filledCount % 2 === 0 ? 'X' : 'O';
 
   // Determine if it's currently MY turn
-  const isMyTurn =
-    status === 'in_progress' &&
-    (turn ? turn === currentUserId : currentTurnSymbol === mySymbol);
+  const isMyTurn = status === 'in_progress' && currentTurnSymbol === mySymbol;
 
-  const { line: winningLine } = checkWinner(board);
+  const { line: winningLine, winner: detectedWinSymbol } = checkWinner(board);
 
   // Format winner banner display text
   const getWinnerText = () => {
-    if (!winner) return 'Winner Declared!';
-    if (winner === currentUserId || winner === mySymbol) return 'You Won the Game!';
-    if (winner === 'X' || winner === 'O') {
-      return winner === mySymbol ? 'You Won the Game!' : `${peerName} Won the Game!`;
-    }
-    if (winner.length > 20) {
-      return winner === currentUserId ? 'You Won the Game!' : `${peerName} Won the Game!`;
-    }
-    return `${winner} Won the Game!`;
+    const activeWin = winner || detectedWinSymbol;
+    if (!activeWin) return 'Winner Declared!';
+    if (activeWin === mySymbol || activeWin === currentUserId) return 'You Won the Game!';
+    return `${peerName} Won the Game!`;
   };
 
   // --- Handlers ---
   const handleTicTacToeMove = (idx: number) => {
-    if (!isMyTurn || board[idx] !== '') return;
+    if (!isMyTurn || board[idx] !== '' || status !== 'in_progress') return;
     sounds.playClick();
 
     const nextBoard = [...board];
@@ -119,7 +119,7 @@ export default function GameOverlay({
 
     if (winSymbol) {
       nextStatus = 'won';
-      nextWinner = currentUserId || winSymbol;
+      nextWinner = winSymbol;
     } else if (nextBoard.every((c) => c !== '')) {
       nextStatus = 'draw';
     }
@@ -128,7 +128,6 @@ export default function GameOverlay({
       board: nextBoard,
       status: nextStatus,
       winner: nextWinner,
-      turn: nextStatus === 'in_progress' && players.length > 1 ? (isPlayer1 ? players[1] : players[0]) : null,
     });
 
     onSendAction('move', 'tictactoe', {
@@ -177,16 +176,19 @@ export default function GameOverlay({
     onSendAction('next', 'dark_questions', { question: nextQ });
   };
 
-  const handleSparkAIDarkQuestion = () => {
+  const handleSparkAIDarkQuestion = async () => {
     sounds.playClick();
     setIsGeneratingAI(true);
-    const aiQ = generateAIDarkQuestion(activeCategoryFilter);
-    useGameStore.setState({
-      customData: { question: aiQ, reactions: {} },
-      status: 'in_progress',
-    });
-    onSendAction('next', 'dark_questions', { question: aiQ });
-    setTimeout(() => setIsGeneratingAI(false), 400);
+    try {
+      const aiQ = await generateAIDarkQuestion(activeCategoryFilter);
+      useGameStore.setState({
+        customData: { question: aiQ, reactions: {} },
+        status: 'in_progress',
+      });
+      onSendAction('next', 'dark_questions', { question: aiQ });
+    } finally {
+      setIsGeneratingAI(false);
+    }
   };
 
   const handleReactDarkQuestion = (emoji: string) => {
@@ -222,16 +224,19 @@ export default function GameOverlay({
     onSendAction('next', 'would_you_rather', { card: nextCard });
   };
 
-  const handleSparkAIWYR = () => {
+  const handleSparkAIWYR = async () => {
     sounds.playClick();
     setIsGeneratingAI(true);
-    const aiCard = generateAIWYRCard();
-    useGameStore.setState({
-      customData: { card: aiCard, votes: {} },
-      status: 'in_progress',
-    });
-    onSendAction('next', 'would_you_rather', { card: aiCard });
-    setTimeout(() => setIsGeneratingAI(false), 400);
+    try {
+      const aiCard = await generateAIWYRCard();
+      useGameStore.setState({
+        customData: { card: aiCard, votes: {} },
+        status: 'in_progress',
+      });
+      onSendAction('next', 'would_you_rather', { card: aiCard });
+    } finally {
+      setIsGeneratingAI(false);
+    }
   };
 
   const handleSwitchGame = (type: GameType) => {

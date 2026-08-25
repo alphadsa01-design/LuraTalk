@@ -202,10 +202,10 @@ export default function HistoryPage() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="fixed top-20 right-6 z-50 px-4 py-2.5 rounded-2xl bg-emerald-500/90 text-white text-xs font-bold shadow-2xl backdrop-blur-xl flex items-center gap-2"
+            className="fixed top-16 sm:top-20 left-0 right-0 mx-auto max-w-sm w-[calc(100%-2rem)] z-50 px-4 py-2.5 rounded-2xl bg-neutral-950/95 border border-emerald-500/50 text-emerald-300 text-xs font-bold shadow-2xl backdrop-blur-2xl flex items-center gap-2"
           >
-            <Check className="w-4 h-4" />
-            <span>{actionSuccess}</span>
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="truncate">{actionSuccess}</span>
           </motion.div>
         )}
       </AnimatePresence>

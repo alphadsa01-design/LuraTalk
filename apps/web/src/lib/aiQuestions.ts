@@ -106,9 +106,38 @@ const WYR_TEMPLATES: WYRCard[] = [
 ];
 
 /**
- * Generate a fresh, non-repeating Dark Fantasy AI Question
+ * Generate a fresh, non-repeating Dark Fantasy AI Question (Powered by Google Gemini + Fallback)
  */
-export function generateAIDarkQuestion(category?: string): DarkQuestion {
+export async function generateAIDarkQuestion(category?: string): Promise<DarkQuestion> {
+  const selectedCat = category && category !== 'All' ? category : 'Dark & Sensual Taboos';
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+    const res = await fetch('/api/ai/generate-question', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'dark_question', category: selectedCat }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json?.data?.question) {
+        return {
+          category: json.data.category || selectedCat,
+          question: json.data.question,
+          tag: json.data.tag || 'Gemini AI',
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[AI Questions] Gemini request timed out or failed, using instant local engine:', err);
+  }
+
+  // Fallback to local synthesis engine
   const matchingPool = category && category !== 'All'
     ? DARK_FANTASY_PROMPTS.filter((p) => p.category.includes(category))
     : DARK_FANTASY_PROMPTS;
@@ -127,8 +156,34 @@ export function generateAIDarkQuestion(category?: string): DarkQuestion {
 }
 
 /**
- * Generate a fresh, non-repeating Would You Rather Dark Fantasy Card
+ * Generate a fresh, non-repeating Would You Rather Dark Fantasy Card (Powered by Google Gemini + Fallback)
  */
-export function generateAIWYRCard(): WYRCard {
+export async function generateAIWYRCard(): Promise<WYRCard> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+    const res = await fetch('/api/ai/generate-question', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'wyr' }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json?.data?.optionA && json?.data?.optionB) {
+        return {
+          optionA: json.data.optionA,
+          optionB: json.data.optionB,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[AI Questions] Gemini WYR request timed out or failed, using instant local engine:', err);
+  }
+
+  // Fallback to local templates
   return WYR_TEMPLATES[Math.floor(Math.random() * WYR_TEMPLATES.length)];
 }

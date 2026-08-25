@@ -248,10 +248,10 @@ export default function AdminPage() {
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className="fixed top-20 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 backdrop-blur-2xl shadow-2xl"
+            className="fixed top-16 sm:top-20 left-0 right-0 mx-auto max-w-sm w-[calc(100%-2rem)] z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-neutral-950/95 text-emerald-300 border border-emerald-500/40 backdrop-blur-2xl shadow-2xl"
           >
-            <CheckCircle className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs font-bold">{actionSuccess}</span>
+            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="text-xs font-bold truncate">{actionSuccess}</span>
           </motion.div>
         )}
       </AnimatePresence>

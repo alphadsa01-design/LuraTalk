@@ -825,6 +825,10 @@ class LuraWebRTCEngine {
     if (this.onSpeakingChange) this.onSpeakingChange(false);
     if (this.onPeerSpeakingChange) this.onPeerSpeakingChange(false);
   }
+
+  public isActive(): boolean {
+    return this.isCalling && (Boolean(this.pc) || Boolean(this.livekitRoom));
+  }
 }
 
 export const webrtcEngine = new LuraWebRTCEngine();

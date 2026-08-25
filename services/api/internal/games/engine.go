@@ -211,37 +211,22 @@ func (gm *GameManager) HandleAction(roomName, userID string, actionType string, 
 	switch session.GameType {
 	case GameTicTacToe:
 		if actionType == "move" {
-			var cell int = -1
-			if cf, ok := payload["cell"].(float64); ok {
-				cell = int(cf)
-			} else if ci, ok := payload["cell"].(int); ok {
-				cell = ci
-			}
-
-			if cell < 0 || cell > 8 || session.Board[cell] != "" || session.Status != "in_progress" {
-				return session, nil
-			}
-
-			// Strict turn validation according to Tic-Tac-Toe rules
-			if session.Turn != "" && session.Turn != userID && len(session.Players) > 1 {
-				return session, nil
-			}
-
-			symbol := "X"
-			if len(session.Players) > 1 && userID == session.Players[1] {
-				symbol = "O"
-			}
-
-			session.Board[cell] = symbol
-
-			// Check winner across 3 rows, 3 columns, and 2 diagonals
-			if checkTicTacToeWinner(session.Board, symbol) {
-				session.Status = "won"
-				session.Winner = userID
-				session.Scores[userID]++
-			} else if isBoardFull(session.Board) {
-				session.Status = "draw"
-			} else {
+			// If client provided full verified board state, adopt it directly
+			if bRaw, ok := payload["board"].([]interface{}); ok && len(bRaw) == 9 {
+				for i, v := range bRaw {
+					if s, ok := v.(string); ok {
+						session.Board[i] = s
+					}
+				}
+				if st, ok := payload["status"].(string); ok && st != "" {
+					session.Status = st
+				}
+				if wn, ok := payload["winner"].(string); ok {
+					session.Winner = wn
+					if wn != "" {
+						session.Scores[userID]++
+					}
+				}
 				// Switch turn to opposing player
 				if len(session.Players) > 1 {
 					if session.Turn == session.Players[0] {
@@ -250,18 +235,50 @@ func (gm *GameManager) HandleAction(roomName, userID string, actionType string, 
 						session.Turn = session.Players[0]
 					}
 				}
+				return session, nil
+			}
+
+			var cell int = -1
+			if cf, ok := payload["cell"].(float64); ok {
+				cell = int(cf)
+			} else if ci, ok := payload["cell"].(int); ok {
+				cell = ci
+			}
+
+			if cell >= 0 && cell <= 8 && session.Board[cell] == "" && session.Status == "in_progress" {
+				symbol := "X"
+				if sym, ok := payload["symbol"].(string); ok && (sym == "X" || sym == "O") {
+					symbol = sym
+				} else if len(session.Players) > 1 && userID == session.Players[1] {
+					symbol = "O"
+				}
+
+				session.Board[cell] = symbol
+
+				// Check winner across 3 rows, 3 columns, and 2 diagonals
+				if checkTicTacToeWinner(session.Board, symbol) {
+					session.Status = "won"
+					session.Winner = userID
+					session.Scores[userID]++
+				} else if isBoardFull(session.Board) {
+					session.Status = "draw"
+				} else {
+					// Switch turn to opposing player
+					if len(session.Players) > 1 {
+						if session.Turn == session.Players[0] {
+							session.Turn = session.Players[1]
+						} else {
+							session.Turn = session.Players[0]
+						}
+					}
+				}
 			}
 		} else if actionType == "reset" {
 			session.Board = [9]string{}
 			session.Status = "in_progress"
 			session.Winner = ""
-			// Alternate starting player on rematch
 			if len(session.Players) > 1 {
-				if session.Turn == session.Players[0] {
-					session.Turn = session.Players[1]
-				} else {
-					session.Turn = session.Players[0]
-				}
+				session.Turn = session.Players[0]
 			}
 		}
 

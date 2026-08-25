@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useGameStore } from './useGameStore';
 
 export type CallStatus = 'idle' | 'searching' | 'matched' | 'in_call' | 'disconnected';
 
@@ -144,7 +145,11 @@ export const useCallStore = create<CallState>((set) => ({
     set({ isLocalScreenSharing: sharing, localScreenStream: stream }),
   setRemoteScreenSharing: (sharing, stream = null) =>
     set({ isRemoteScreenSharing: sharing, remoteScreenStream: stream }),
-  resetCall: () =>
+  resetCall: () => {
+    // Automatically close and reset any open multiplayer games
+    try {
+      useGameStore.getState().resetGame();
+    } catch {}
     set({
       status: 'idle',
       matchId: null,
@@ -165,5 +170,6 @@ export const useCallStore = create<CallState>((set) => ({
       isRemoteScreenSharing: false,
       localScreenStream: null,
       remoteScreenStream: null,
-    }),
+    });
+  },
 }));
