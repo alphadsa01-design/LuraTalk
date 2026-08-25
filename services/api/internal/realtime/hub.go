@@ -916,6 +916,14 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			}
 
 			session := h.GameManager.StartGame(client.ActiveRoom, payload.GameType, client.UserID, p2)
+			if payload.Data != nil {
+				if qRaw, ok := payload.Data["question"].(map[string]interface{}); ok && qRaw["question"] != nil {
+					session.CustomData["question"] = qRaw
+				}
+				if cRaw, ok := payload.Data["card"].(map[string]interface{}); ok && cRaw["optionA"] != nil {
+					session.CustomData["card"] = cRaw
+				}
+			}
 			h.broadcastToRoom(client.ActiveRoom, "game:update", session)
 		} else {
 			session, err := h.GameManager.HandleAction(client.ActiveRoom, client.UserID, payload.ActionType, payload.Data)

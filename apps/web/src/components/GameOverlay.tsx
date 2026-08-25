@@ -227,8 +227,18 @@ export default function GameOverlay({
 
   const handleSwitchGame = (type: GameType) => {
     sounds.playClick();
+    let initialData: Record<string, any> = {};
+    if (type === 'dark_questions') {
+      const q = getNextCuratedDarkQuestion();
+      initialData = { question: q };
+      useGameStore.setState({ customData: { question: q, reactions: {} } });
+    } else if (type === 'would_you_rather') {
+      const c = getNextCuratedWYRCard();
+      initialData = { card: c };
+      useGameStore.setState({ customData: { card: c, votes: {} } });
+    }
     openGame(type);
-    onSendAction('start', type, {});
+    onSendAction('start', type, initialData);
   };
 
   return (

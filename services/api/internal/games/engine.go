@@ -284,9 +284,14 @@ func (gm *GameManager) HandleAction(roomName, userID string, actionType string, 
 
 	case GameDarkQuestions:
 		if actionType == "next" {
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			q := darkQuestions[r.Intn(len(darkQuestions))]
-			session.CustomData["question"] = q
+			// If client provided a specific question in payload, adopt it directly to maintain exact sync
+			if qRaw, ok := payload["question"].(map[string]interface{}); ok && qRaw["question"] != nil {
+				session.CustomData["question"] = qRaw
+			} else {
+				r := rand.New(rand.NewSource(time.Now().UnixNano()))
+				q := darkQuestions[r.Intn(len(darkQuestions))]
+				session.CustomData["question"] = q
+			}
 			session.CustomData["reactions"] = make(map[string]string)
 			session.Status = "in_progress"
 		} else if actionType == "react" {
@@ -314,9 +319,14 @@ func (gm *GameManager) HandleAction(roomName, userID string, actionType string, 
 				session.Status = "completed"
 			}
 		} else if actionType == "next" {
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			card := wyrCards[r.Intn(len(wyrCards))]
-			session.CustomData["card"] = card
+			// If client provided a specific card in payload, adopt it directly to maintain exact sync
+			if cRaw, ok := payload["card"].(map[string]interface{}); ok && cRaw["optionA"] != nil {
+				session.CustomData["card"] = cRaw
+			} else {
+				r := rand.New(rand.NewSource(time.Now().UnixNano()))
+				card := wyrCards[r.Intn(len(wyrCards))]
+				session.CustomData["card"] = card
+			}
 			session.CustomData["votes"] = make(map[string]string)
 			session.Status = "in_progress"
 		}
