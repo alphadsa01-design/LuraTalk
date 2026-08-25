@@ -125,6 +125,7 @@ function MatchPageContent() {
   const [friendRequested, setFriendRequested] = useState(false);
   const friendRequestedRef = useRef(false);
   const [screenShareToast, setScreenShareToast] = useState<string | null>(null);
+  const [micPermissionDenied, setMicPermissionDenied] = useState(false);
 
   const updateFriendRequested = (val: boolean) => {
     friendRequestedRef.current = val;
@@ -230,7 +231,14 @@ function MatchPageContent() {
             onDisconnected: () => {
               console.log('[Match] WebRTC audio disconnected');
             },
-            onError: (err) => console.error('WebRTC Call Error:', err),
+            onError: (err) => {
+              if (err?.name === 'NotAllowedError') {
+                console.warn('[Match] Microphone permission was not granted by user');
+                setMicPermissionDenied(true);
+              } else {
+                console.warn('[Match] Handled WebRTC Call Error:', err);
+              }
+            },
           });
         }
       } else {
@@ -304,7 +312,14 @@ function MatchPageContent() {
           onDisconnected: () => {
             console.log('[Match] WebRTC audio disconnected');
           },
-          onError: (err) => console.error('WebRTC Call Error:', err),
+          onError: (err) => {
+            if (err?.name === 'NotAllowedError') {
+              console.warn('[Match] Microphone permission was not granted by user');
+              setMicPermissionDenied(true);
+            } else {
+              console.warn('[Match] Handled WebRTC Call Error:', err);
+            }
+          },
         });
       }
     });
@@ -1097,6 +1112,20 @@ function MatchPageContent() {
           <button
             onClick={() => setScreenShareToast(null)}
             className="text-neutral-400 hover:text-white ml-2 text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Microphone Permission Required Banner */}
+      {micPermissionDenied && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-2xl bg-black/95 backdrop-blur-xl border border-rose-500/50 text-white text-xs font-semibold text-center shadow-2xl max-w-md mx-auto flex items-center gap-2.5 animate-bounce">
+          <MicOff className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>Microphone access was blocked. Please click the lock or camera/mic icon in your address bar to allow permissions and refresh.</span>
+          <button
+            onClick={() => setMicPermissionDenied(false)}
+            className="text-neutral-400 hover:text-white ml-auto text-xs"
           >
             ✕
           </button>

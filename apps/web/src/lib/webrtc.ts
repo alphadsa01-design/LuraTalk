@@ -363,7 +363,11 @@ class LuraWebRTCEngine {
       this.setupLocalAudioAnalysis(this.localStream);
       this.startAudioEnergyLoop();
     } catch (err: any) {
-      console.error('Failed to initialize WebRTC audio call', err);
+      if (err?.name === 'NotAllowedError') {
+        console.warn('[WebRTC] Microphone permission denied by user in browser');
+      } else {
+        console.warn('[WebRTC] Handled audio call initialization issue:', err);
+      }
       if (options.onError) {
         options.onError(err);
       }

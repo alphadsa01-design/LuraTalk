@@ -17,6 +17,7 @@ import {
   DARK_QUESTIONS,
   DEFAULT_WYR_CARDS,
 } from '@/stores/useGameStore';
+import { generateAIDarkQuestion, generateAIWYRCard } from '@/lib/aiQuestions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { sounds } from '@/lib/sounds';
 
@@ -66,6 +67,7 @@ export default function GameOverlay({
   const [localDarkIndex, setLocalDarkIndex] = useState(0);
   const [localCardIndex, setLocalCardIndex] = useState(0);
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('All');
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
   if (!isOpen) return null;
 
@@ -175,6 +177,18 @@ export default function GameOverlay({
     onSendAction('next', 'dark_questions', { question: nextQ });
   };
 
+  const handleSparkAIDarkQuestion = () => {
+    sounds.playClick();
+    setIsGeneratingAI(true);
+    const aiQ = generateAIDarkQuestion(activeCategoryFilter);
+    useGameStore.setState({
+      customData: { question: aiQ, reactions: {} },
+      status: 'in_progress',
+    });
+    onSendAction('next', 'dark_questions', { question: aiQ });
+    setTimeout(() => setIsGeneratingAI(false), 400);
+  };
+
   const handleReactDarkQuestion = (emoji: string) => {
     sounds.playClick();
     const currentReactions = { ...(customData?.reactions || {}) };
@@ -206,6 +220,18 @@ export default function GameOverlay({
       status: 'in_progress',
     });
     onSendAction('next', 'would_you_rather', { card: nextCard });
+  };
+
+  const handleSparkAIWYR = () => {
+    sounds.playClick();
+    setIsGeneratingAI(true);
+    const aiCard = generateAIWYRCard();
+    useGameStore.setState({
+      customData: { card: aiCard, votes: {} },
+      status: 'in_progress',
+    });
+    onSendAction('next', 'would_you_rather', { card: aiCard });
+    setTimeout(() => setIsGeneratingAI(false), 400);
   };
 
   const handleSwitchGame = (type: GameType) => {
@@ -433,7 +459,13 @@ export default function GameOverlay({
             <div className="flex flex-col items-center py-2 space-y-4">
               {/* Category Pills - Unfilled Clean Outline Style */}
               <div className="flex flex-wrap items-center justify-center gap-1.5 w-full">
-                {['All', 'Dark Truths', 'Moral Dilemma', 'Existential', 'Psychology'].map((cat) => (
+                {[
+                  'All',
+                  'Dark & Sensual Taboos',
+                  'Forbidden Desires',
+                  'Seduction & Power',
+                  'Dark Fantasies & Alter Egos',
+                ].map((cat) => (
                   <button
                     key={cat}
                     onClick={() => {
@@ -443,7 +475,7 @@ export default function GameOverlay({
                     }}
                     className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${
                       activeCategoryFilter === cat
-                        ? 'bg-transparent border-rose-400 text-rose-300 font-bold'
+                        ? 'bg-transparent border-rose-400 text-rose-300 font-bold shadow-[0_0_10px_rgba(244,63,94,0.25)]'
                         : 'bg-transparent border-white/15 text-gray-400 hover:text-white hover:border-white/30'
                     }`}
                   >
@@ -517,14 +549,25 @@ export default function GameOverlay({
                 </div>
               </motion.div>
 
-              {/* Next Question Button - Unfilled Clean Outline Style */}
-              <button
-                onClick={handleNextDarkQuestion}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-transparent hover:bg-white/10 border border-white/30 hover:border-white/60 text-white text-xs font-bold transition-all mx-auto active:scale-95"
-              >
-                <RefreshCw className="w-4 h-4" />
-                <span>Next Dark Question</span>
-              </button>
+              {/* Action Buttons: Next Question & Spark with AI */}
+              <div className="flex items-center justify-center gap-3 pt-1">
+                <button
+                  onClick={handleNextDarkQuestion}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-transparent hover:bg-white/10 border border-white/30 hover:border-white/60 text-white text-xs font-bold transition-all active:scale-95"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Next Question</span>
+                </button>
+
+                <button
+                  onClick={handleSparkAIDarkQuestion}
+                  disabled={isGeneratingAI}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-transparent hover:bg-rose-500/20 border border-rose-400 text-rose-300 hover:text-rose-200 text-xs font-bold transition-all shadow-[0_0_15px_rgba(244,63,94,0.2)] active:scale-95 disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 text-rose-400 ${isGeneratingAI ? 'animate-spin' : ''}`} />
+                  <span>{isGeneratingAI ? 'Generating...' : 'Spark with AI'}</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -563,19 +606,30 @@ export default function GameOverlay({
                 })}
               </div>
 
-              <div className="pt-2 text-center w-full">
+              <div className="pt-2 text-center w-full space-y-3">
                 {status === 'completed' && (
-                  <p className="text-xs text-emerald-400 font-medium mb-3">
+                  <p className="text-xs text-emerald-400 font-medium">
                     Choice registered! Compare answers with {peerName}.
                   </p>
                 )}
-                <button
-                  onClick={handleNextWYR}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-transparent hover:bg-white/10 border border-white/30 hover:border-white/60 text-white text-xs font-bold transition-all mx-auto active:scale-95"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>Next Dilemma</span>
-                </button>
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={handleNextWYR}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-transparent hover:bg-white/10 border border-white/30 hover:border-white/60 text-white text-xs font-bold transition-all active:scale-95"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Next Dilemma</span>
+                  </button>
+
+                  <button
+                    onClick={handleSparkAIWYR}
+                    disabled={isGeneratingAI}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-transparent hover:bg-cyan-500/20 border border-cyan-400 text-cyan-300 hover:text-cyan-200 text-xs font-bold transition-all shadow-[0_0_15px_rgba(6,182,212,0.2)] active:scale-95 disabled:opacity-50"
+                  >
+                    <Sparkles className={`w-3.5 h-3.5 text-cyan-400 ${isGeneratingAI ? 'animate-spin' : ''}`} />
+                    <span>{isGeneratingAI ? 'Generating...' : 'Spark with AI'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
