@@ -45,6 +45,11 @@ class LuraWebRTCEngine {
   private pendingOffer: any = null;
   private isSettingRemote: boolean = false;
   private isCalling: boolean = false;
+  private currentAnalyzedStreamId: string | null = null;
+
+  // Mobile Background Keep-Alive & Wake Lock State
+  private silentAudio: HTMLAudioElement | null = null;
+  private wakeLock: any = null;
 
   private onSpeakingChange?: (isSpeaking: boolean) => void;
   private onPeerSpeakingChange?: (isPeerSpeaking: boolean) => void;
@@ -52,17 +57,84 @@ class LuraWebRTCEngine {
   constructor() {
     if (typeof window !== 'undefined') {
       const unlockAudio = () => {
-        if (this.audioCtx && this.audioCtx.state === 'suspended') {
-          this.audioCtx.resume().catch(() => {});
-        }
-        if (this.remoteAudio && this.remoteAudio.paused && this.remoteAudio.srcObject) {
-          this.remoteAudio.play().catch(() => {});
-        }
+        this.resumeAudio();
       };
       window.addEventListener('click', unlockAudio, { passive: true });
       window.addEventListener('touchstart', unlockAudio, { passive: true });
       window.addEventListener('keydown', unlockAudio, { passive: true });
+
+      // Mobile Background & Home Screen Voice Keep-Alive Recovery
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible' && this.isCalling) {
+            this.resumeAudio();
+            this.requestWakeLock();
+          }
+        });
+      }
+      window.addEventListener('pageshow', () => {
+        if (this.isCalling) {
+          this.resumeAudio();
+          this.requestWakeLock();
+        }
+      });
+      window.addEventListener('focus', () => {
+        if (this.isCalling) {
+          this.resumeAudio();
+        }
+      });
     }
+  }
+
+  private async requestWakeLock() {
+    if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && (navigator as any).wakeLock) {
+      try {
+        if (!this.wakeLock) {
+          this.wakeLock = await (navigator as any).wakeLock.request('screen');
+          this.wakeLock.addEventListener('release', () => {
+            this.wakeLock = null;
+          });
+        }
+      } catch {}
+    }
+  }
+
+  private releaseWakeLock() {
+    if (this.wakeLock) {
+      try {
+        this.wakeLock.release().catch(() => {});
+      } catch {}
+      this.wakeLock = null;
+    }
+  }
+
+  private ensureSilentAudioElement(): HTMLAudioElement {
+    if (typeof document !== 'undefined') {
+      let el = document.getElementById('luratalk-silent-keepalive') as HTMLAudioElement;
+      if (!el) {
+        el = document.createElement('audio');
+        el.id = 'luratalk-silent-keepalive';
+        el.setAttribute('playsinline', 'true');
+        el.setAttribute('webkit-playsinline', 'true');
+        el.loop = true;
+        el.volume = 0.001;
+        // 0.1s valid silent WAV data URI to keep iOS/Android media session alive in background
+        el.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+        el.style.position = 'fixed';
+        el.style.bottom = '0px';
+        el.style.right = '0px';
+        el.style.width = '1px';
+        el.style.height = '1px';
+        el.style.opacity = '0.001';
+        el.style.pointerEvents = 'none';
+        document.body.appendChild(el);
+      }
+      this.silentAudio = el;
+      return el;
+    }
+    this.silentAudio = new Audio();
+    this.silentAudio.loop = true;
+    return this.silentAudio;
   }
 
   private ensureRemoteAudioElement(): HTMLAudioElement {
@@ -130,7 +202,32 @@ class LuraWebRTCEngine {
     this.onPeerSpeakingChange = options.onPeerSpeakingChange;
 
     this.ensureRemoteAudioElement();
+    this.ensureSilentAudioElement();
+    if (this.silentAudio) {
+      this.silentAudio.play().catch(() => {});
+    }
     this.getOrCreateAudioContext();
+    this.requestWakeLock();
+
+    // Register OS MediaSession for mobile lock screen & background keepalive
+    if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: 'LuraTalk Voice Call',
+          artist: options.roomName ? `Room ${options.roomName}` : 'Active Voice Call',
+          album: 'Encrypted Real-Time Audio',
+        });
+        navigator.mediaSession.playbackState = 'playing';
+        navigator.mediaSession.setActionHandler('play', () => {
+          this.resumeAudio();
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          this.resumeAudio();
+        });
+      } catch (e) {
+        console.warn('[WebRTC] MediaSession registration ignored:', e);
+      }
+    }
 
     // Strategy 1: Attempt LiveKit SFU ONLY if a valid, live remote LiveKit host is provided
     const isLiveKitAvailable =
@@ -167,6 +264,11 @@ class LuraWebRTCEngine {
       publishDefaults: {
         simulcast: false,
         videoCodec: 'vp8',
+        dtx: false,
+        screenShareEncoding: {
+          maxBitrate: 1_500_000,
+          maxFramerate: 24,
+        },
       },
     });
 
@@ -259,7 +361,17 @@ class LuraWebRTCEngine {
       this.localStream.getAudioTracks().forEach((track) => {
         track.enabled = !this.isMuted;
         if (this.pc && this.localStream) {
-          this.pc.addTrack(track, this.localStream);
+          const sender = this.pc.addTrack(track, this.localStream);
+          try {
+            const params = sender.getParameters();
+            if (!params.encodings || params.encodings.length === 0) {
+              params.encodings = [{}];
+            }
+            params.encodings[0].priority = 'high';
+            params.encodings[0].networkPriority = 'high';
+            params.encodings[0].maxBitrate = 64000;
+            sender.setParameters(params).catch(() => {});
+          } catch {}
         }
       });
 
@@ -275,23 +387,25 @@ class LuraWebRTCEngine {
 
           const audioEl = this.ensureRemoteAudioElement();
           if (audioEl) {
-            audioEl.srcObject = stream;
-            audioEl.volume = 1.0;
-            audioEl.muted = this.isDeafened;
-            const playPromise = audioEl.play();
-            if (playPromise !== undefined) {
-              playPromise.catch((err) => {
-                console.warn('[WebRTC] Autoplay waiting for interaction:', err);
-                const unlockAudio = () => {
-                  audioEl.play().catch(() => {});
-                  window.removeEventListener('click', unlockAudio);
-                  window.removeEventListener('touchstart', unlockAudio);
-                  window.removeEventListener('keydown', unlockAudio);
-                };
-                window.addEventListener('click', unlockAudio, { once: true, passive: true });
-                window.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
-                window.addEventListener('keydown', unlockAudio, { once: true, passive: true });
-              });
+            if (audioEl.srcObject !== stream) {
+              audioEl.srcObject = stream;
+              audioEl.volume = 1.0;
+              audioEl.muted = this.isDeafened;
+              const playPromise = audioEl.play();
+              if (playPromise !== undefined) {
+                playPromise.catch((err) => {
+                  console.warn('[WebRTC] Autoplay waiting for interaction:', err);
+                  const unlockAudio = () => {
+                    audioEl.play().catch(() => {});
+                    window.removeEventListener('click', unlockAudio);
+                    window.removeEventListener('touchstart', unlockAudio);
+                    window.removeEventListener('keydown', unlockAudio);
+                  };
+                  window.addEventListener('click', unlockAudio, { once: true, passive: true });
+                  window.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+                  window.addEventListener('keydown', unlockAudio, { once: true, passive: true });
+                });
+              }
             }
           }
 
@@ -379,8 +493,8 @@ class LuraWebRTCEngine {
     if (!opusMatch) return sdp;
     const pt = opusMatch[1];
     const fmtpRegex = new RegExp(`a=fmtp:${pt} (.*)`, 'g');
-    // High-Definition Studio Voice: 64kbps HD audio, FEC enabled, DTX disabled to avoid voice clipping
-    const naturalVoiceFmtp = `a=fmtp:${pt} minptime=10;ptime=20;maxptime=60;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=64000`;
+    // High-Definition Studio Voice: 64kbps HD audio, FEC enabled, DTX disabled (cbr=0;usedtx=0) to avoid voice clipping and stuttering during high network/video load
+    const naturalVoiceFmtp = `a=fmtp:${pt} minptime=10;ptime=20;maxptime=60;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=64000;cbr=0;usedtx=0`;
 
     if (fmtpRegex.test(sdp)) {
       return sdp.replace(fmtpRegex, naturalVoiceFmtp);
@@ -490,11 +604,16 @@ class LuraWebRTCEngine {
         return null;
       }
 
-      // P2P WebRTC Path: Strictly capture OS display/screen (NEVER camera)
+      // P2P WebRTC Path: Strictly capture OS display/screen with optimized constraints (1080p max, 30fps)
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
+          video: {
+            displaySurface: 'monitor',
+            frameRate: { ideal: 24, max: 30 },
+            width: { max: 1920 },
+            height: { max: 1080 },
+          },
           audio: false,
         });
       } catch (firstErr: any) {
@@ -507,6 +626,7 @@ class LuraWebRTCEngine {
         // Fallback for browsers requiring plain video constraint
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: true,
+          audio: false,
         });
       }
 
@@ -517,6 +637,10 @@ class LuraWebRTCEngine {
         return null;
       }
 
+      if ('contentHint' in videoTrack) {
+        videoTrack.contentHint = 'motion';
+      }
+
       // Handle user clicking native browser "Stop Sharing" floating bar
       videoTrack.onended = () => {
         this.stopScreenShare().catch(() => {});
@@ -524,6 +648,38 @@ class LuraWebRTCEngine {
 
       if (this.pc) {
         this.screenSender = this.pc.addTrack(videoTrack, stream);
+
+        // Cap video sender bitrate and set lower priority than audio to prevent audio packet starvation
+        try {
+          const params = this.screenSender.getParameters();
+          if (!params.encodings || params.encodings.length === 0) {
+            params.encodings = [{}];
+          }
+          params.encodings[0].maxBitrate = 1_800_000; // 1.8 Mbps max for screen share
+          params.encodings[0].maxFramerate = 30;
+          params.encodings[0].priority = 'low';
+          params.encodings[0].networkPriority = 'low';
+          await this.screenSender.setParameters(params);
+        } catch (e) {
+          console.warn('[WebRTC] Error configuring screen sender parameters:', e);
+        }
+
+        // Re-ensure audio sender has high network priority
+        try {
+          const audioSender = this.pc.getSenders().find((s) => s.track && s.track.kind === 'audio');
+          if (audioSender) {
+            const aParams = audioSender.getParameters();
+            if (!aParams.encodings || aParams.encodings.length === 0) {
+              aParams.encodings = [{}];
+            }
+            aParams.encodings[0].priority = 'high';
+            aParams.encodings[0].networkPriority = 'high';
+            aParams.encodings[0].maxBitrate = 64000;
+            await audioSender.setParameters(aParams);
+          }
+        } catch (e) {
+          console.warn('[WebRTC] Error prioritizing audio sender:', e);
+        }
 
         if (this.pc.signalingState === 'stable') {
           try {
@@ -623,6 +779,11 @@ class LuraWebRTCEngine {
 
   private setupRemoteAudioAnalysis(stream: MediaStream) {
     try {
+      if (this.currentAnalyzedStreamId === stream.id && this.remoteAnalyser) {
+        return;
+      }
+      this.currentAnalyzedStreamId = stream.id;
+
       const ctx = this.getOrCreateAudioContext();
       if (ctx.state === 'suspended') {
         ctx.resume().catch(() => {});
@@ -633,9 +794,11 @@ class LuraWebRTCEngine {
         } catch {}
       }
       this.remoteAudioSource = ctx.createMediaStreamSource(stream);
-      this.remoteAnalyser = ctx.createAnalyser();
-      this.remoteAnalyser.fftSize = 256;
-      this.remoteAnalyser.smoothingTimeConstant = 0.4;
+      if (!this.remoteAnalyser) {
+        this.remoteAnalyser = ctx.createAnalyser();
+        this.remoteAnalyser.fftSize = 256;
+        this.remoteAnalyser.smoothingTimeConstant = 0.4;
+      }
 
       // Studio-Grade Voice Gain Booster (1.8x Gain Node for crisp, loud output)
       if (!this.remoteGainNode) {
@@ -708,8 +871,25 @@ class LuraWebRTCEngine {
     if (this.remoteAudio && this.remoteAudio.srcObject) {
       this.remoteAudio.play().catch(() => {});
     }
-    if (this.audioCtx && this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume().catch(() => {});
+    if (this.silentAudio && this.silentAudio.paused && this.isCalling) {
+      this.silentAudio.play().catch(() => {});
+    }
+    if (this.audioCtx) {
+      if (this.audioCtx.state === 'suspended' || (this.audioCtx.state as string) === 'interrupted') {
+        this.audioCtx.resume().catch(() => {});
+      }
+    }
+    if (this.localStream) {
+      this.localStream.getAudioTracks().forEach((track) => {
+        if (!track.enabled && !this.isMuted) {
+          track.enabled = true;
+        }
+      });
+    }
+    if (this.pc && (this.pc.iceConnectionState === 'disconnected' || this.pc.iceConnectionState === 'failed')) {
+      try {
+        this.pc.restartIce();
+      } catch {}
     }
   }
 
@@ -774,6 +954,16 @@ class LuraWebRTCEngine {
 
   public cleanup() {
     this.isCalling = false;
+    this.releaseWakeLock();
+
+    if (this.silentAudio) {
+      this.silentAudio.pause();
+    }
+    if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.playbackState = 'none';
+      } catch {}
+    }
 
     // Stop active screen share on cleanup
     if (this.localScreenStream) {
@@ -818,6 +1008,7 @@ class LuraWebRTCEngine {
       this.remoteGainNode = null;
     }
     this.remoteStream = null;
+    this.currentAnalyzedStreamId = null;
     this.iceCandidatesQueue = [];
     this.pendingOffer = null;
     this.isSettingRemote = false;

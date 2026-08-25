@@ -11,6 +11,25 @@ class AuraSocketClient {
   private messageBuffer: string[] = [];
   private reconnectAttempts: number = 0;
 
+  constructor() {
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && this.token) {
+          if (!this.ws || this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) {
+            this.reconnectAttempts = 0;
+            this.connect(this.token);
+          }
+        }
+      });
+      window.addEventListener('online', () => {
+        if (this.token) {
+          this.reconnectAttempts = 0;
+          this.connect(this.token);
+        }
+      });
+    }
+  }
+
   public connect(token: string) {
     if (typeof window === 'undefined' || typeof WebSocket === 'undefined') {
       return;

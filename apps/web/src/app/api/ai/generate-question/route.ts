@@ -12,16 +12,16 @@ export async function POST(req: NextRequest) {
     let prompt = '';
 
     if (type === 'wyr') {
-      prompt = `You are the AI game master for LuraTalk, an anonymous real-time voice and party game app.
-Generate a single, thrilling, high-stakes "Would You Rather" dark fantasy or sensual dilemma between two deeply tempting or morally complex choices.
+      prompt = `You are the AI game master for LuraTalk, an anonymous real-time voice chat app.
+Generate a single, high-stakes, seductive, and thrilling "Would You Rather" dark fantasy or sensual dilemma between two deeply tempting, sexy, or morally taboo choices.
 Output strictly raw JSON without markdown code blocks, backticks, or extra text in this exact format:
 {"optionA": "string", "optionB": "string"}`;
     } else {
-      prompt = `You are the AI game master for LuraTalk, an anonymous real-time voice and party game app.
-Generate a single, deeply provocative, dark, sensual, taboo, psychological, or dark fantasy truth question for the category: "${category}".
-Make it exciting, unfiltered, psychologically thrilling, and suitable for late-night intimate stranger conversations.
+      prompt = `You are the AI game master for LuraTalk, an anonymous real-time voice chat app.
+Generate a single, deeply provocative, dark fantasy, seductive, sexy, taboo, and unfiltered truth question.
+Make it exciting, spicy, psychologically thrilling, and suitable for late-night intimate stranger conversations.
 Output strictly raw JSON without markdown code blocks, backticks, or extra text in this exact format:
-{"category": "${category}", "question": "string", "tag": "short 2-3 word tag"}`;
+{"category": "Dark Fantasy & Sexy", "question": "string", "tag": "short 2-3 word tag"}`;
     }
 
     const response = await fetch(

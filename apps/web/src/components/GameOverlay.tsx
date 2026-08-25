@@ -17,7 +17,13 @@ import {
   DARK_QUESTIONS,
   DEFAULT_WYR_CARDS,
 } from '@/stores/useGameStore';
-import { generateAIDarkQuestion, generateAIWYRCard } from '@/lib/aiQuestions';
+import {
+  generateAIDarkQuestion,
+  generateAIWYRCard,
+  getNextCuratedDarkQuestion,
+  getNextCuratedWYRCard,
+  ALL_DARK_QUESTIONS,
+} from '@/lib/aiQuestions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { sounds } from '@/lib/sounds';
 
@@ -71,18 +77,15 @@ export default function GameOverlay({
     closeGame,
   } = useGameStore();
 
-  const [localDarkIndex, setLocalDarkIndex] = useState(0);
-  const [localCardIndex, setLocalCardIndex] = useState(0);
-  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('All');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
   if (!isOpen) return null;
 
   // Active game card data with instant fallbacks
   const activeDarkQuestion =
-    customData?.question || DARK_QUESTIONS[localDarkIndex % DARK_QUESTIONS.length];
+    customData?.question || ALL_DARK_QUESTIONS[0];
   const activeCard =
-    customData?.card || DEFAULT_WYR_CARDS[localCardIndex % DEFAULT_WYR_CARDS.length];
+    customData?.card || DEFAULT_WYR_CARDS[0];
 
   // --- TIC-TAC-TOE TURN & SYMBOL LOGIC ---
   // Initiator is always 'X' (goes first), Receiver is always 'O' (goes second)
@@ -150,25 +153,10 @@ export default function GameOverlay({
     onSendAction('reset', 'tictactoe', { board: emptyBoard, status: 'in_progress' });
   };
 
-  // Dark Questions Handlers
+  // Dark & Sexy Questions Handlers (Non-Repeating Curated Queue)
   const handleNextDarkQuestion = () => {
     sounds.playClick();
-    let nextIdx = localDarkIndex + 1;
-    if (activeCategoryFilter !== 'All') {
-      const filtered = DARK_QUESTIONS.filter((q) => q.category.includes(activeCategoryFilter));
-      if (filtered.length > 0) {
-        const nextQ = filtered[nextIdx % filtered.length];
-        useGameStore.setState({
-          customData: { question: nextQ, reactions: {} },
-          status: 'in_progress',
-        });
-        onSendAction('next', 'dark_questions', { question: nextQ });
-        setLocalDarkIndex(nextIdx);
-        return;
-      }
-    }
-    setLocalDarkIndex(nextIdx);
-    const nextQ = DARK_QUESTIONS[nextIdx % DARK_QUESTIONS.length];
+    const nextQ = getNextCuratedDarkQuestion();
     useGameStore.setState({
       customData: { question: nextQ, reactions: {} },
       status: 'in_progress',
@@ -180,7 +168,7 @@ export default function GameOverlay({
     sounds.playClick();
     setIsGeneratingAI(true);
     try {
-      const aiQ = await generateAIDarkQuestion(activeCategoryFilter);
+      const aiQ = await generateAIDarkQuestion();
       useGameStore.setState({
         customData: { question: aiQ, reactions: {} },
         status: 'in_progress',
@@ -214,9 +202,7 @@ export default function GameOverlay({
 
   const handleNextWYR = () => {
     sounds.playClick();
-    const nextIdx = localCardIndex + 1;
-    setLocalCardIndex(nextIdx);
-    const nextCard = DEFAULT_WYR_CARDS[nextIdx % DEFAULT_WYR_CARDS.length];
+    const nextCard = getNextCuratedWYRCard();
     useGameStore.setState({
       customData: { card: nextCard, votes: {} },
       status: 'in_progress',
@@ -458,37 +444,10 @@ export default function GameOverlay({
           )}
 
           {/* ======================================================== */}
-          {/* GAME 2: DARK & DEEP QUESTIONS / DILEMMAS                 */}
+          {/* GAME 2: DARK & SEXY FANTASY QUESTIONS                    */}
           {/* ======================================================== */}
           {gameType === 'dark_questions' && (
             <div className="flex flex-col items-center py-2 space-y-4">
-              {/* Category Pills - Unfilled Clean Outline Style */}
-              <div className="flex flex-wrap items-center justify-center gap-1.5 w-full">
-                {[
-                  'All',
-                  'Dark & Sensual Taboos',
-                  'Forbidden Desires',
-                  'Seduction & Power',
-                  'Dark Fantasies & Alter Egos',
-                ].map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => {
-                      sounds.playClick();
-                      setActiveCategoryFilter(cat);
-                      handleNextDarkQuestion();
-                    }}
-                    className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${
-                      activeCategoryFilter === cat
-                        ? 'bg-transparent border-rose-400 text-rose-300 font-bold shadow-[0_0_10px_rgba(244,63,94,0.25)]'
-                        : 'bg-transparent border-white/15 text-gray-400 hover:text-white hover:border-white/30'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-
               {/* Question Card */}
               <motion.div
                 key={activeDarkQuestion?.question}

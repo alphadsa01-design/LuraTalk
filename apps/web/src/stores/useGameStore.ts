@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { getNextCuratedDarkQuestion, getNextCuratedWYRCard } from '@/lib/aiQuestions';
 
 export type GameType = 'tictactoe' | 'dark_questions' | 'would_you_rather' | 'two_truths' | 'twenty_questions';
 
@@ -662,9 +663,9 @@ export const useGameStore = create<GameState>((set) => ({
       board: Array(9).fill(''),
       customData:
         type === 'dark_questions'
-          ? { question: DARK_QUESTIONS[0], reactions: {} }
+          ? { question: getNextCuratedDarkQuestion(), reactions: {} }
           : type === 'would_you_rather'
-          ? { card: DEFAULT_WYR_CARDS[0], votes: {} }
+          ? { card: getNextCuratedWYRCard(), votes: {} }
           : {},
     }),
   closeGame: () => set({ isOpen: false }),

@@ -22,10 +22,12 @@ export default function ScreenShareView({
 
   useEffect(() => {
     if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-      videoRef.current.play().catch((err) => {
-        console.warn('[ScreenShareView] Video play error:', err);
-      });
+      if (videoRef.current.srcObject !== stream) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch((err) => {
+          console.warn('[ScreenShareView] Video play error:', err);
+        });
+      }
     }
   }, [stream]);
 
@@ -59,12 +61,12 @@ export default function ScreenShareView({
       ref={containerRef}
       className="relative w-full rounded-3xl overflow-hidden glass-panel border border-white/15 shadow-2xl bg-black flex flex-col items-center justify-center min-h-[300px] sm:min-h-[420px] max-h-[64vh]"
     >
-      {/* Video Stream Element */}
+      {/* Video Stream Element - strictly muted because real-time voice is rendered via dedicated audio engine */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
-        muted={isLocal}
+        muted
         className="w-full h-full object-contain max-h-[58vh] sm:max-h-[64vh] rounded-2xl bg-black"
       />
 
