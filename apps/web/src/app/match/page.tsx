@@ -40,6 +40,7 @@ import {
 } from '@/lib/storage';
 import AudioVisualizer from '@/components/AudioVisualizer';
 import ScreenShareView from '@/components/ScreenShareView';
+import { getNextCuratedDarkQuestion, getNextCuratedWYRCard } from '@/lib/aiQuestions';
 import AIWidget from '@/components/AIWidget';
 import TranslationBar from '@/components/TranslationBar';
 import GameOverlay from '@/components/GameOverlay';
@@ -790,25 +791,40 @@ function MatchPageContent() {
             </div>
           </div>
         ) : status === 'searching' ? (
-          <div className="w-full h-[260px] sm:h-[340px] rounded-3xl glass-panel-glow flex flex-col items-center justify-center text-center p-6 relative overflow-hidden">
-            {/* Concentric Radar Rings - Vibrant Violet */}
-            <div className="absolute w-44 h-44 sm:w-64 sm:h-64 rounded-full border border-primary/30 animate-ping opacity-40" />
-            <div className="absolute w-64 h-64 sm:w-88 sm:h-88 rounded-full border border-secondary/20 animate-pulse-slow opacity-30" />
+          <div className="w-full h-[260px] sm:h-[340px] rounded-3xl glass-panel-glow flex flex-col items-center justify-center text-center p-6 relative overflow-hidden border border-white/15 shadow-2xl">
+            {/* Concentric Radar Rings & Glowing Halo */}
+            <div className="absolute w-48 h-48 sm:w-72 sm:h-72 rounded-full border border-cyan-400/30 animate-ping opacity-40" />
+            <div className="absolute w-64 h-64 sm:w-96 sm:h-96 rounded-full border border-purple-500/25 animate-pulse opacity-30" />
 
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-transparent border border-white/30 p-1 shadow-2xl mb-4 relative z-10 animate-pulse">
-              <div className="w-full h-full rounded-full bg-transparent flex items-center justify-center text-white">
-                <Radio className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
-              </div>
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-transparent border border-cyan-400/40 p-1 shadow-[0_0_30px_rgba(6,182,212,0.3)] mb-4 relative z-10 flex items-center justify-center">
+              <Radio className="w-8 h-8 sm:w-10 sm:h-10 text-cyan-300 animate-pulse" />
             </div>
 
-            <h3 className="text-xl sm:text-2xl font-bold text-white z-10">Finding someone to talk with...</h3>
-            <p className="text-xs text-neutral-400 mt-1.5 max-w-xs z-10">
-              Connecting you with someone online right now.
+            <h3 className="text-xl sm:text-2xl font-bold text-white z-10 tracking-wide">
+              Connecting voice channel...
+            </h3>
+            <p className="text-xs text-neutral-300 mt-1.5 max-w-xs z-10">
+              Matching with a live partner worldwide.
             </p>
+
+            {/* Dynamic Connecting Soundwave Equalizer Bars */}
+            <div className="flex items-center justify-center gap-1.5 mt-4 z-10 h-7">
+              {[0.6, 1.0, 0.4, 0.9, 0.3, 0.8, 0.5, 1.0, 0.7].map((scale, i) => (
+                <div
+                  key={i}
+                  className="w-1 rounded-full bg-gradient-to-t from-cyan-400 to-purple-400 animate-pulse"
+                  style={{
+                    height: `${Math.round(scale * 24)}px`,
+                    animationDelay: `${i * 120}ms`,
+                    animationDuration: '800ms',
+                  }}
+                />
+              ))}
+            </div>
 
             <button
               onClick={handleCancelSearch}
-              className="mt-6 px-6 py-2.5 rounded-xl bg-transparent hover:bg-white/10 text-neutral-300 hover:text-white text-xs font-bold border border-white/20 hover:border-white/40 transition-all active:scale-95 flex items-center gap-1.5 z-10"
+              className="mt-5 px-6 py-2 rounded-xl bg-transparent hover:bg-white/10 text-neutral-300 hover:text-white text-xs font-bold border border-white/20 hover:border-white/40 transition-all active:scale-95 flex items-center gap-1.5 z-10"
             >
               <PhoneOff className="w-3.5 h-3.5" />
               <span>Cancel</span>
@@ -1073,7 +1089,17 @@ function MatchPageContent() {
               <button
                 key={game.id}
                 onClick={() => {
-                  socketClient.sendGameAction('start', game.id);
+                  let initialData: Record<string, any> = {};
+                  if (game.id === 'dark_questions') {
+                    const q = getNextCuratedDarkQuestion();
+                    initialData = { question: q };
+                    useGameStore.setState({ customData: { question: q, reactions: {} } });
+                  } else if (game.id === 'would_you_rather') {
+                    const c = getNextCuratedWYRCard();
+                    initialData = { card: c };
+                    useGameStore.setState({ customData: { card: c, votes: {} } });
+                  }
+                  socketClient.sendGameAction('start', game.id, initialData);
                   openGame(game.id as any);
                   setIsGameMenuOpen(false);
                 }}

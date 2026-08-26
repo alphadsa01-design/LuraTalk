@@ -19,17 +19,51 @@ export default function ScreenShareView({
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isVideoReady, setIsVideoReady] = useState(false);
 
   useEffect(() => {
-    if (videoRef.current && stream) {
-      if (videoRef.current.srcObject !== stream) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch((err) => {
-          console.warn('[ScreenShareView] Video play error:', err);
-        });
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    video.autoplay = true;
+
+    if (stream) {
+      if (video.srcObject !== stream) {
+        video.srcObject = stream;
       }
+
+      const handleReady = () => {
+        setIsVideoReady(true);
+        if (video.paused) {
+          video.play().catch(() => {});
+        }
+      };
+
+      video.onloadedmetadata = handleReady;
+      video.onloadeddata = handleReady;
+      video.oncanplay = handleReady;
+      video.onplaying = handleReady;
+      handleReady();
+
+      const tracks = stream.getVideoTracks();
+      tracks.forEach((track) => {
+        track.onunmute = handleReady;
+        track.onended = () => {
+          onStopShare?.();
+        };
+      });
+
+      return () => {
+        video.onloadedmetadata = null;
+        video.onloadeddata = null;
+        video.oncanplay = null;
+        video.onplaying = null;
+      };
     }
-  }, [stream]);
+  }, [stream, onStopShare]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -61,14 +95,29 @@ export default function ScreenShareView({
       ref={containerRef}
       className="relative w-full rounded-3xl overflow-hidden glass-panel border border-white/15 shadow-2xl bg-black flex flex-col items-center justify-center min-h-[300px] sm:min-h-[420px] max-h-[64vh]"
     >
-      {/* Video Stream Element - strictly muted because real-time voice is rendered via dedicated audio engine */}
+      {/* Video Stream Element */}
       <video
-        ref={videoRef}
+        ref={(el) => {
+          (videoRef as any).current = el;
+          if (el && stream && el.srcObject !== stream) {
+            el.srcObject = stream;
+            el.play().catch(() => {});
+          }
+        }}
         autoPlay
         playsInline
         muted
-        className="w-full h-full object-contain max-h-[58vh] sm:max-h-[64vh] rounded-2xl bg-black"
+        className="w-full h-full object-contain max-h-[58vh] sm:max-h-[64vh] rounded-2xl bg-black relative z-10"
       />
+
+      {/* Loading Overlay while waiting for remote video packets */}
+      {!isVideoReady && !isLocal && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4 z-0 bg-neutral-950/90 backdrop-blur-sm">
+          <div className="w-8 h-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin mb-3" />
+          <p className="text-sm font-semibold text-white">Connecting Live Screen...</p>
+          <p className="text-xs text-neutral-400 mt-1">Establishing encrypted video channel</p>
+        </div>
+      )}
 
       {/* Floating Top Control Bar */}
       <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">

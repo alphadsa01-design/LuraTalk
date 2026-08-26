@@ -30,6 +30,8 @@ class LuraWebRTCEngine {
   // Screen Sharing State
   private screenSender: RTCRtpSender | null = null;
   private localScreenStream: MediaStream | null = null;
+  private remoteVideoStream: MediaStream | null = null;
+  private isRemoteScreenSharingActive: boolean = false;
 
   // Audio Context & Analysis
   private audioCtx: AudioContext | null = null;
@@ -411,17 +413,18 @@ class LuraWebRTCEngine {
 
           this.setupRemoteAudioAnalysis(stream);
         } else if (track.kind === 'video') {
-          // Remote Screen Share Video Track Received
-          useCallStore.getState().setRemoteScreenSharing(true, stream);
+          // Live Screen Share Video Track Received
+          const videoStream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([track]);
+          this.remoteVideoStream = videoStream;
+          useCallStore.getState().setRemoteScreenSharing(true, videoStream);
+
+          track.onunmute = () => {
+            useCallStore.getState().setRemoteScreenSharing(true, videoStream);
+          };
 
           track.onended = () => {
+            this.remoteVideoStream = null;
             useCallStore.getState().setRemoteScreenSharing(false, null);
-          };
-          track.onmute = () => {
-            // Track muted or paused
-          };
-          track.onunmute = () => {
-            useCallStore.getState().setRemoteScreenSharing(true, stream);
           };
         }
       };
@@ -462,7 +465,7 @@ class LuraWebRTCEngine {
       if (options.isInitiator && this.pc.signalingState === 'stable') {
         const offer = await this.pc.createOffer({
           offerToReceiveAudio: true,
-          offerToReceiveVideo: true,
+          offerToReceiveVideo: false,
         });
         if (offer.sdp) {
           offer.sdp = this.optimizeOpusSdp(offer.sdp);
@@ -510,11 +513,24 @@ class LuraWebRTCEngine {
     if (!payload || !payload.type) return;
 
     if (payload.type === 'screen:stop') {
+      this.isRemoteScreenSharingActive = false;
+      this.remoteVideoStream = null;
       useCallStore.getState().setRemoteScreenSharing(false, null);
       return;
     }
 
     if (payload.type === 'screen:start') {
+      let vStream = this.remoteVideoStream;
+      if (!vStream && this.pc) {
+        const vReceiver = this.pc.getReceivers().find((r) => r.track?.kind === 'video');
+        if (vReceiver && vReceiver.track) {
+          vStream = new MediaStream([vReceiver.track]);
+          this.remoteVideoStream = vStream;
+        }
+      }
+      if (vStream) {
+        useCallStore.getState().setRemoteScreenSharing(true, vStream);
+      }
       return;
     }
 
@@ -530,15 +546,19 @@ class LuraWebRTCEngine {
     try {
       if (payload.type === 'offer') {
         if (this.pc.signalingState !== 'stable') {
-          if (!isInitiator) {
-            try {
-              await this.pc.setLocalDescription({ type: 'rollback' });
-            } catch (e) {
-              console.warn('[WebRTC] Rollback ignored', e);
-            }
-          } else {
-            return;
+          try {
+            await this.pc.setLocalDescription({ type: 'rollback' });
+          } catch (e) {
+            console.warn('[WebRTC] Rollback ignored', e);
           }
+        }
+
+        const transceivers = this.pc.getTransceivers();
+        const vTransceiver = transceivers.find(
+          (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'
+        );
+        if (vTransceiver) {
+          vTransceiver.direction = 'sendrecv';
         }
 
         this.isSettingRemote = true;
@@ -552,6 +572,15 @@ class LuraWebRTCEngine {
         }
         await this.pc.setLocalDescription(answer);
 
+        const vReceiver = this.pc.getReceivers().find((r) => r.track?.kind === 'video');
+        if (vReceiver && vReceiver.track) {
+          const vStream = new MediaStream([vReceiver.track]);
+          this.remoteVideoStream = vStream;
+          if (useCallStore.getState().isRemoteScreenSharing) {
+            useCallStore.getState().setRemoteScreenSharing(true, vStream);
+          }
+        }
+
         socketClient.send('webrtc:signal', {
           type: 'answer',
           answer: answer,
@@ -562,6 +591,15 @@ class LuraWebRTCEngine {
           await this.pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
           this.isSettingRemote = false;
           await this.flushQueuedIceCandidates();
+
+          const vReceiver = this.pc.getReceivers().find((r) => r.track?.kind === 'video');
+          if (vReceiver && vReceiver.track) {
+            const vStream = new MediaStream([vReceiver.track]);
+            this.remoteVideoStream = vStream;
+            if (useCallStore.getState().isRemoteScreenSharing) {
+              useCallStore.getState().setRemoteScreenSharing(true, vStream);
+            }
+          }
         }
       } else if (payload.type === 'candidate' && payload.candidate) {
         if (this.pc.remoteDescription && this.pc.remoteDescription.type) {
@@ -647,21 +685,24 @@ class LuraWebRTCEngine {
       };
 
       if (this.pc) {
+        if (this.screenSender) {
+          try {
+            this.pc.removeTrack(this.screenSender);
+          } catch {}
+        }
         this.screenSender = this.pc.addTrack(videoTrack, stream);
 
-        // Cap video sender bitrate and set lower priority than audio to prevent audio packet starvation
+        // Ensure video sender bitrate and 30fps max
         try {
           const params = this.screenSender.getParameters();
           if (!params.encodings || params.encodings.length === 0) {
             params.encodings = [{}];
           }
-          params.encodings[0].maxBitrate = 1_800_000; // 1.8 Mbps max for screen share
+          params.encodings[0].maxBitrate = 2_500_000;
           params.encodings[0].maxFramerate = 30;
-          params.encodings[0].priority = 'low';
-          params.encodings[0].networkPriority = 'low';
           await this.screenSender.setParameters(params);
         } catch (e) {
-          console.warn('[WebRTC] Error configuring screen sender parameters:', e);
+          console.warn('[WebRTC] Sender parameters fallback:', e);
         }
 
         // Re-ensure audio sender has high network priority
@@ -683,7 +724,10 @@ class LuraWebRTCEngine {
 
         if (this.pc.signalingState === 'stable') {
           try {
-            const offer = await this.pc.createOffer();
+            const offer = await this.pc.createOffer({
+              offerToReceiveAudio: true,
+              offerToReceiveVideo: true,
+            });
             if (offer.sdp) {
               offer.sdp = this.optimizeOpusSdp(offer.sdp);
             }
@@ -714,11 +758,21 @@ class LuraWebRTCEngine {
   }
 
   public async stopScreenShare() {
+    // 1. Immediately reset store state on self for 0ms transition
+    useCallStore.getState().setLocalScreenSharing(false, null);
+    useCallStore.getState().setRemoteScreenSharing(false, null);
+    this.remoteVideoStream = null;
+
+    // 2. Broadcast screen:stop to peer immediately via WebSocket
+    socketClient.send('webrtc:signal', { type: 'screen:stop' });
+
+    // 3. Stop local screen capture tracks
     if (this.localScreenStream) {
       this.localScreenStream.getTracks().forEach((track) => track.stop());
       this.localScreenStream = null;
     }
 
+    // 4. Detach from WebRTC and renegotiate audio-only cleanly
     if (this.isUsingLiveKit && this.livekitRoom) {
       try {
         await this.livekitRoom.localParticipant.setScreenShareEnabled(false);
@@ -731,11 +785,12 @@ class LuraWebRTCEngine {
         this.screenSender = null;
       }
 
-      socketClient.send('webrtc:signal', { type: 'screen:stop' });
-
       if (this.pc.signalingState === 'stable') {
         try {
-          const offer = await this.pc.createOffer();
+          const offer = await this.pc.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: false,
+          });
           if (offer.sdp) {
             offer.sdp = this.optimizeOpusSdp(offer.sdp);
           }
@@ -749,8 +804,6 @@ class LuraWebRTCEngine {
         }
       }
     }
-
-    useCallStore.getState().setLocalScreenSharing(false, null);
   }
 
   private getOrCreateAudioContext(): AudioContext {
@@ -825,7 +878,7 @@ class LuraWebRTCEngine {
         let sum = 0;
         for (let i = 0; i < localData.length; i++) sum += localData[i];
         const average = sum / localData.length;
-        const speaking = average > 10;
+        const speaking = average > 4;
         if (this.onSpeakingChange) this.onSpeakingChange(speaking);
       } else if (this.onSpeakingChange) {
         this.onSpeakingChange(false);
@@ -836,7 +889,7 @@ class LuraWebRTCEngine {
         let sum = 0;
         for (let i = 0; i < remoteData.length; i++) sum += remoteData[i];
         const average = sum / remoteData.length;
-        const peerSpeaking = average > 10;
+        const peerSpeaking = average > 4;
         if (this.onPeerSpeakingChange) this.onPeerSpeakingChange(peerSpeaking);
       } else if (this.onPeerSpeakingChange) {
         this.onPeerSpeakingChange(false);
@@ -971,6 +1024,7 @@ class LuraWebRTCEngine {
       this.localScreenStream = null;
     }
     this.screenSender = null;
+    this.remoteVideoStream = null;
     useCallStore.getState().setLocalScreenSharing(false, null);
     useCallStore.getState().setRemoteScreenSharing(false, null);
 

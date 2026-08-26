@@ -44,28 +44,28 @@ export default function AudioVisualizer({
       const centerY = height / 2;
 
       // Draw subtle circular aura rings around the center
-      const energy = peerSpeaking ? 1.6 : isSpeaking ? 1.2 : 0.4;
-      const radius = 60 + Math.sin(phase * 2) * 8 * energy;
+      const energy = peerSpeaking ? 2.2 : isSpeaking ? 1.8 : 0.8;
+      const radius = 70 + Math.sin(phase * 2) * 12 * energy;
 
-      const gradient = ctx.createRadialGradient(width / 2, centerY, 30, width / 2, centerY, radius + 30);
-      gradient.addColorStop(0, peerSpeaking ? 'rgba(139, 92, 246, 0.25)' : 'rgba(6, 182, 212, 0.15)');
+      const gradient = ctx.createRadialGradient(width / 2, centerY, 20, width / 2, centerY, radius + 45);
+      gradient.addColorStop(0, peerSpeaking ? 'rgba(168, 85, 247, 0.35)' : isSpeaking ? 'rgba(6, 182, 212, 0.3)' : 'rgba(255, 255, 255, 0.08)');
       gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
       ctx.fillStyle = gradient;
       ctx.beginPath();
-      ctx.arc(width / 2, centerY, radius + 30, 0, Math.PI * 2);
+      ctx.arc(width / 2, centerY, radius + 45, 0, Math.PI * 2);
       ctx.fill();
 
-      // Flowing dynamic sine wave layers
+      // Flowing dynamic sine wave layers (Clearly visible & alive at all times)
       const waves = [
-        { amplitude: (peerSpeaking ? 30 : isSpeaking ? 18 : 6), frequency: 0.015, color: 'rgba(139, 92, 246, 0.4)', offset: 0 },
-        { amplitude: (peerSpeaking ? 20 : isSpeaking ? 12 : 4), frequency: 0.02, color: 'rgba(6, 182, 212, 0.35)', offset: 2 },
-        { amplitude: (peerSpeaking ? 12 : isSpeaking ? 8 : 3), frequency: 0.025, color: 'rgba(244, 63, 94, 0.25)', offset: 4 },
+        { amplitude: (peerSpeaking ? 45 : isSpeaking ? 32 : 14), frequency: 0.016, color: peerSpeaking ? 'rgba(192, 132, 252, 0.8)' : isSpeaking ? 'rgba(34, 211, 238, 0.8)' : 'rgba(255, 255, 255, 0.4)', offset: 0, lineWidth: 3 },
+        { amplitude: (peerSpeaking ? 32 : isSpeaking ? 24 : 10), frequency: 0.022, color: peerSpeaking ? 'rgba(147, 51, 234, 0.6)' : isSpeaking ? 'rgba(6, 182, 212, 0.6)' : 'rgba(255, 255, 255, 0.25)', offset: 2.2, lineWidth: 2 },
+        { amplitude: (peerSpeaking ? 22 : isSpeaking ? 16 : 8), frequency: 0.028, color: peerSpeaking ? 'rgba(236, 72, 153, 0.5)' : isSpeaking ? 'rgba(56, 189, 248, 0.5)' : 'rgba(255, 255, 255, 0.15)', offset: 4.4, lineWidth: 2 },
       ];
 
       waves.forEach((wave) => {
         ctx.beginPath();
-        for (let x = 0; x < width; x += 4) {
+        for (let x = 0; x < width; x += 3) {
           const y =
             centerY +
             Math.sin(x * wave.frequency + phase + wave.offset) *
@@ -78,11 +78,11 @@ export default function AudioVisualizer({
           }
         }
         ctx.strokeStyle = wave.color;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = wave.lineWidth;
         ctx.stroke();
       });
 
-      phase += (peerSpeaking || isSpeaking ? 0.08 : 0.025);
+      phase += (peerSpeaking || isSpeaking ? 0.09 : 0.04);
       animationFrameId = requestAnimationFrame(render);
     };
 

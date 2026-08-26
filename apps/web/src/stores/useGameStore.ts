@@ -655,7 +655,7 @@ export const useGameStore = create<GameState>((set) => ({
   customData: {},
 
   openGame: (type) =>
-    set({
+    set((state) => ({
       isOpen: true,
       gameType: type,
       status: 'in_progress',
@@ -663,11 +663,11 @@ export const useGameStore = create<GameState>((set) => ({
       board: Array(9).fill(''),
       customData:
         type === 'dark_questions'
-          ? { question: getNextCuratedDarkQuestion(), reactions: {} }
+          ? (state.customData?.question ? state.customData : { question: getNextCuratedDarkQuestion(), reactions: {} })
           : type === 'would_you_rather'
-          ? { card: getNextCuratedWYRCard(), votes: {} }
+          ? (state.customData?.card ? state.customData : { card: getNextCuratedWYRCard(), votes: {} })
           : {},
-    }),
+    })),
   closeGame: () => set({ isOpen: false }),
   updateGameState: (session) =>
     set({
