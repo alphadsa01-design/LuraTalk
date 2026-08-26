@@ -349,13 +349,27 @@ class LuraWebRTCEngine {
         });
       }
 
-      // Ultra-Fast Google STUN + Twilio Zero-Latency Cluster
+      // Multi-Region High-Availability STUN Cluster + Dynamic TURN Support
+      const iceServers: RTCIceServer[] = [
+        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302', 'stun:stun3.l.google.com:19302', 'stun:stun4.l.google.com:19302'] },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
+        { urls: 'stun:stun.nextcloud.com:443' },
+      ];
+
+      const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
+      const turnUser = process.env.NEXT_PUBLIC_TURN_USERNAME;
+      const turnPass = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
+      if (turnUrl) {
+        iceServers.push({
+          urls: turnUrl.split(',').map((u) => u.trim()),
+          ...(turnUser && turnPass ? { username: turnUser, credential: turnPass } : {}),
+        });
+      }
+
       this.pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302', 'stun:stun3.l.google.com:19302', 'stun:stun4.l.google.com:19302'] },
-          { urls: 'stun:global.stun.twilio.com:3478' },
-        ],
-        iceCandidatePoolSize: 6,
+        iceServers,
+        iceCandidatePoolSize: 8,
         bundlePolicy: 'max-bundle',
         rtcpMuxPolicy: 'require',
       });

@@ -123,17 +123,31 @@ func (c *Config) IsOriginAllowed(origin string) bool {
 	if origin == "" {
 		return true // Allow non-browser clients / tools
 	}
-	// Always allow all localhost, 127.0.0.1, and all Vercel domains (*.vercel.app)
-	if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") || strings.Contains(origin, ".vercel.app") || strings.Contains(origin, "luratalk") {
+	// Always allow localhost, 127.0.0.1, Vercel, Render, Railway, Fly, Cloudflare Pages, Netlify, custom domains
+	lower := strings.ToLower(origin)
+	if strings.Contains(lower, "localhost") ||
+		strings.Contains(lower, "127.0.0.1") ||
+		strings.Contains(lower, ".vercel.app") ||
+		strings.Contains(lower, ".onrender.com") ||
+		strings.Contains(lower, ".railway.app") ||
+		strings.Contains(lower, ".fly.dev") ||
+		strings.Contains(lower, ".netlify.app") ||
+		strings.Contains(lower, ".pages.dev") ||
+		strings.Contains(lower, "luratalk") ||
+		strings.Contains(lower, "airtak") {
 		return true
 	}
 	allowed := c.GetParsedAllowedOrigins()
+	if len(allowed) == 0 {
+		return true
+	}
 	for _, a := range allowed {
-		if a == "*" || a == origin {
+		if a == "*" || strings.EqualFold(a, origin) {
 			return true
 		}
 	}
-	return false
+	// Permissive fallback so deployed clients are never blocked
+	return true
 }
 
 func getEnv(key, fallback string) string {

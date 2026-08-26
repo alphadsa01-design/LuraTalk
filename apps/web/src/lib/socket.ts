@@ -43,7 +43,10 @@ class AuraSocketClient {
     let wsUrl = process.env.NEXT_PUBLIC_WS_URL;
     if (!wsUrl) {
       const apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:8080' : window.location.origin) : 'http://localhost:8080');
-      wsUrl = apiBase.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:') + '/ws';
+      wsUrl = apiBase.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+      if (!wsUrl.includes('/ws')) {
+        wsUrl = wsUrl.replace(/\/+$/, '') + '/ws';
+      }
     } else {
       // Auto-correct http/https prefixes to ws/wss
       wsUrl = wsUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
@@ -52,8 +55,11 @@ class AuraSocketClient {
       }
     }
 
+    const separator = wsUrl.includes('?') ? '&' : '?';
+    const authenticatedWsUrl = `${wsUrl}${separator}token=${encodeURIComponent(token)}`;
+
     try {
-      this.ws = new WebSocket(wsUrl, ['aura-auth', token]);
+      this.ws = new WebSocket(authenticatedWsUrl, ['aura-auth', token]);
 
       this.ws.onopen = () => {
         this.isConnecting = false;

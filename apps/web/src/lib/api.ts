@@ -11,6 +11,9 @@ function getApiBase(): string {
       url = 'http://localhost:8080';
     }
   }
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = (typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'https://' : 'http://') + url;
+  }
   return url.replace(/\/+$/, '');
 }
 
