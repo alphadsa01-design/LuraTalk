@@ -505,6 +505,68 @@ class LuraWebRTCEngine {
     }
   }
 
+  private setPreferredVideoCodecs(transceiver: RTCRtpTransceiver) {
+    if (typeof RTCRtpReceiver !== 'undefined' && 'getCapabilities' in RTCRtpReceiver) {
+      try {
+        const capabilities = RTCRtpReceiver.getCapabilities('video');
+        if (capabilities && capabilities.codecs) {
+          // Prioritize H.264 for universal mobile (iOS Safari / Android) hardware decoding
+          const h264Codecs = capabilities.codecs.filter(
+            (c) => c.mimeType.toLowerCase() === 'video/h264'
+          );
+          const otherCodecs = capabilities.codecs.filter(
+            (c) => c.mimeType.toLowerCase() !== 'video/h264'
+          );
+          if (h264Codecs.length > 0 && typeof transceiver.setCodecPreferences === 'function') {
+            transceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
+          }
+        }
+      } catch (e) {
+        console.warn('[WebRTC] setCodecPreferences fallback:', e);
+      }
+    }
+  }
+
+  private prioritizeH264AndOptimizeSdp(sdp: string): string {
+    let optimized = this.optimizeOpusSdp(sdp);
+
+    // Prioritize H264 in video section for 100% Mobile (iOS Safari / Android) hardware decoding compatibility
+    const videoMediaRegex = /m=video (\d+) ([\w\/]+) ([\d\s]+)/;
+    const match = optimized.match(videoMediaRegex);
+    if (!match) return optimized;
+
+    const currentPayloads = match[3].trim().split(/\s+/);
+    
+    // Find all H264 payload IDs from rtpmap lines
+    const h264Payloads: string[] = [];
+    const otherPayloads: string[] = [];
+    
+    const rtpmapRegex = /a=rtpmap:(\d+)\s+H264\/90000/gi;
+    let rtpMatch: RegExpExecArray | null;
+    const h264Ids = new Set<string>();
+    while ((rtpMatch = rtpmapRegex.exec(optimized)) !== null) {
+      h264Ids.add(rtpMatch[1]);
+    }
+
+    currentPayloads.forEach((pt) => {
+      if (h264Ids.has(pt)) {
+        h264Payloads.push(pt);
+      } else {
+        otherPayloads.push(pt);
+      }
+    });
+
+    if (h264Payloads.length > 0) {
+      const newPayloadOrder = [...h264Payloads, ...otherPayloads].join(' ');
+      optimized = optimized.replace(
+        videoMediaRegex,
+        `m=video ${match[1]} ${match[2]} ${newPayloadOrder}`
+      );
+    }
+
+    return optimized;
+  }
+
   private optimizeOpusSdp(sdp: string): string {
     const opusMatch = sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i);
     if (!opusMatch) return sdp;
@@ -572,6 +634,7 @@ class LuraWebRTCEngine {
           (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'
         );
         if (vTransceiver) {
+          this.setPreferredVideoCodecs(vTransceiver);
           vTransceiver.direction = 'sendrecv';
         }
 
@@ -582,7 +645,7 @@ class LuraWebRTCEngine {
 
         const answer = await this.pc.createAnswer();
         if (answer.sdp) {
-          answer.sdp = this.optimizeOpusSdp(answer.sdp);
+          answer.sdp = this.prioritizeH264AndOptimizeSdp(answer.sdp);
         }
         await this.pc.setLocalDescription(answer);
 
@@ -590,9 +653,7 @@ class LuraWebRTCEngine {
         if (vReceiver && vReceiver.track) {
           const vStream = new MediaStream([vReceiver.track]);
           this.remoteVideoStream = vStream;
-          if (useCallStore.getState().isRemoteScreenSharing) {
-            useCallStore.getState().setRemoteScreenSharing(true, vStream);
-          }
+          useCallStore.getState().setRemoteScreenSharing(true, vStream);
         }
 
         socketClient.send('webrtc:signal', {
@@ -736,6 +797,15 @@ class LuraWebRTCEngine {
           console.warn('[WebRTC] Error prioritizing audio sender:', e);
         }
 
+        const transceivers = this.pc.getTransceivers();
+        const vTransceiver = transceivers.find(
+          (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'
+        );
+        if (vTransceiver) {
+          this.setPreferredVideoCodecs(vTransceiver);
+          vTransceiver.direction = 'sendrecv';
+        }
+
         if (this.pc.signalingState === 'stable') {
           try {
             const offer = await this.pc.createOffer({
@@ -743,7 +813,7 @@ class LuraWebRTCEngine {
               offerToReceiveVideo: true,
             });
             if (offer.sdp) {
-              offer.sdp = this.optimizeOpusSdp(offer.sdp);
+              offer.sdp = this.prioritizeH264AndOptimizeSdp(offer.sdp);
             }
             await this.pc.setLocalDescription(offer);
             socketClient.send('webrtc:signal', {

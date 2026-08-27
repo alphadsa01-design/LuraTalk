@@ -28,6 +28,10 @@ export default function ScreenShareView({
     video.muted = true;
     video.defaultMuted = true;
     video.playsInline = true;
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
+    video.setAttribute('autoplay', 'true');
+    video.setAttribute('muted', 'true');
     video.autoplay = true;
 
     if (stream) {
@@ -46,21 +50,49 @@ export default function ScreenShareView({
       video.onloadeddata = handleReady;
       video.oncanplay = handleReady;
       video.onplaying = handleReady;
-      handleReady();
+      video.onresize = handleReady;
+
+      // Force play
+      video.play().catch(() => {});
 
       const tracks = stream.getVideoTracks();
       tracks.forEach((track) => {
-        track.onunmute = handleReady;
+        track.onunmute = () => {
+          if (video.srcObject !== stream) {
+            video.srcObject = stream;
+          }
+          video.play().catch(() => {});
+          handleReady();
+        };
         track.onended = () => {
           onStopShare?.();
         };
       });
 
+      // Mobile WebKit active retry loop to unfreeze initial black frame
+      const retryInterval = setInterval(() => {
+        if (video.paused || (video.readyState < 2 && video.videoWidth === 0)) {
+          video.play().catch(() => {});
+        } else if (video.videoWidth > 0) {
+          setIsVideoReady(true);
+        }
+      }, 300);
+
+      const unlockOnUserTouch = () => {
+        video.play().catch(() => {});
+      };
+      window.addEventListener('touchstart', unlockOnUserTouch, { once: true, passive: true });
+      window.addEventListener('click', unlockOnUserTouch, { once: true, passive: true });
+
       return () => {
+        clearInterval(retryInterval);
+        window.removeEventListener('touchstart', unlockOnUserTouch);
+        window.removeEventListener('click', unlockOnUserTouch);
         video.onloadedmetadata = null;
         video.onloadeddata = null;
         video.oncanplay = null;
         video.onplaying = null;
+        video.onresize = null;
       };
     }
   }, [stream, onStopShare]);
@@ -99,9 +131,18 @@ export default function ScreenShareView({
       <video
         ref={(el) => {
           (videoRef as any).current = el;
-          if (el && stream && el.srcObject !== stream) {
-            el.srcObject = stream;
-            el.play().catch(() => {});
+          if (el) {
+            el.muted = true;
+            el.defaultMuted = true;
+            el.playsInline = true;
+            el.setAttribute('playsinline', 'true');
+            el.setAttribute('webkit-playsinline', 'true');
+            el.setAttribute('autoplay', 'true');
+            el.setAttribute('muted', 'true');
+            if (stream && el.srcObject !== stream) {
+              el.srcObject = stream;
+              el.play().catch(() => {});
+            }
           }
         }}
         autoPlay
