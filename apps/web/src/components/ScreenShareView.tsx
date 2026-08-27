@@ -125,7 +125,7 @@ export default function ScreenShareView({
   return (
     <div
       ref={containerRef}
-      className="relative w-full rounded-3xl overflow-hidden glass-panel border border-white/15 shadow-2xl bg-black flex flex-col items-center justify-center min-h-[300px] sm:min-h-[420px] max-h-[64vh]"
+      className="relative w-full aspect-video max-h-[62vh] rounded-3xl overflow-hidden glass-panel border border-white/15 shadow-2xl bg-black flex items-center justify-center"
     >
       {/* Video Stream Element */}
       <video
@@ -148,7 +148,7 @@ export default function ScreenShareView({
         autoPlay
         playsInline
         muted
-        className="w-full h-full object-contain max-h-[58vh] sm:max-h-[64vh] rounded-2xl bg-black relative z-10"
+        className="w-full h-full object-contain rounded-2xl bg-black relative z-10"
       />
 
       {/* Loading Overlay while waiting for remote video packets */}
@@ -161,16 +161,16 @@ export default function ScreenShareView({
       )}
 
       {/* Floating Top Control Bar */}
-      <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
+      <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-20">
         {/* Stream Status Badge */}
         <div className="pointer-events-auto flex items-center gap-2">
           {isLocal ? (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/60 backdrop-blur-md border border-white/20 text-white text-xs font-semibold shadow-lg">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/70 backdrop-blur-md border border-white/20 text-white text-xs font-semibold shadow-lg">
               <Monitor className="w-3.5 h-3.5 text-white" />
               <span>You are sharing your screen</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/60 backdrop-blur-md border border-white/20 text-white text-xs font-semibold shadow-lg">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/70 backdrop-blur-md border border-white/20 text-white text-xs font-semibold shadow-lg">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span>{peerName}&apos;s Screen (Live HD)</span>
             </div>
@@ -182,7 +182,7 @@ export default function ScreenShareView({
           {isLocal && (
             <button
               onClick={onStopShare}
-              className="px-3 py-1.5 rounded-xl bg-transparent hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg active:scale-95"
+              className="px-3 py-1.5 rounded-xl bg-black/70 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg active:scale-95"
               title="Stop Screen Sharing"
             >
               <StopCircle className="w-3.5 h-3.5 text-rose-300" />
@@ -192,7 +192,7 @@ export default function ScreenShareView({
 
           <button
             onClick={toggleFullscreen}
-            className="p-2 rounded-xl bg-transparent hover:bg-white/10 text-white border border-white/20 transition-all shadow-lg active:scale-95"
+            className="p-2 rounded-xl bg-black/70 hover:bg-white/10 text-white border border-white/20 transition-all shadow-lg active:scale-95"
             title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
           >
             {isFullscreen ? (

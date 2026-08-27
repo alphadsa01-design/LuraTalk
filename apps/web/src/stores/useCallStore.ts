@@ -142,9 +142,15 @@ export const useCallStore = create<CallState>((set) => ({
     })),
   setIcebreaker: (suggestion) => set({ icebreakerSuggestion: suggestion }),
   setLocalScreenSharing: (sharing, stream = null) =>
-    set({ isLocalScreenSharing: sharing, localScreenStream: stream }),
+    set((state) => ({
+      isLocalScreenSharing: sharing,
+      localScreenStream: stream !== undefined && stream !== null ? stream : (sharing ? state.localScreenStream : null),
+    })),
   setRemoteScreenSharing: (sharing, stream = null) =>
-    set({ isRemoteScreenSharing: sharing, remoteScreenStream: stream }),
+    set((state) => ({
+      isRemoteScreenSharing: sharing,
+      remoteScreenStream: stream !== undefined && stream !== null ? stream : (sharing ? state.remoteScreenStream : null),
+    })),
   resetCall: () => {
     // Automatically close and reset any open multiplayer games
     try {

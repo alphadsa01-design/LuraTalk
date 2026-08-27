@@ -863,7 +863,7 @@ function MatchPageContent() {
             {isRemoteScreenSharing || isLocalScreenSharing ? (
               <div className="space-y-2">
                 <ScreenShareView
-                  stream={isRemoteScreenSharing ? remoteScreenStream : localScreenStream}
+                  stream={isLocalScreenSharing ? localScreenStream : remoteScreenStream}
                   isLocal={isLocalScreenSharing}
                   peerName={peer.username}
                   onStopShare={() => webrtcEngine.stopScreenShare()}
@@ -967,11 +967,11 @@ function MatchPageContent() {
 
       {/* Clean Floating Bottom In-Call Dock */}
       {status === 'matched' && (
-        <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-lg w-[calc(100%-1.5rem)] sm:w-auto glass-panel-glow p-1.5 sm:p-2 rounded-3xl border border-white/20 shadow-2xl backdrop-blur-3xl flex items-center justify-between sm:justify-center gap-1.5 sm:gap-2 pb-[max(0.4rem,env(safe-area-inset-bottom))]">
+        <div className="fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-[96vw] sm:max-w-xl w-auto glass-panel-glow p-1 sm:p-2 rounded-2xl sm:rounded-3xl border border-white/20 shadow-2xl backdrop-blur-3xl flex items-center justify-center gap-1 sm:gap-2 overflow-x-auto scrollbar-none pb-[max(0.35rem,env(safe-area-inset-bottom))]">
           {/* Mute Button */}
           <button
             onClick={handleToggleMute}
-            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
+            className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl shrink-0 flex items-center justify-center transition-all active:scale-95 ${
               isMuted
                 ? 'bg-transparent text-rose-300 border border-rose-400'
                 : 'bg-transparent hover:bg-white/10 text-white border border-white/20 hover:border-white/40'
@@ -984,7 +984,7 @@ function MatchPageContent() {
           {/* Chat Button with Badge */}
           <button
             onClick={() => setIsChatOpen(!isChatOpen)}
-            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center relative transition-all active:scale-95 ${
+            className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl shrink-0 flex items-center justify-center relative transition-all active:scale-95 ${
               isChatOpen
                 ? 'bg-transparent text-white border-2 border-white'
                 : 'bg-transparent hover:bg-white/10 text-neutral-200 border border-white/20 hover:border-white/40'
@@ -1002,7 +1002,7 @@ function MatchPageContent() {
           {/* Screen Share Button */}
           <button
             onClick={handleToggleScreenShare}
-            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
+            className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl shrink-0 flex items-center justify-center transition-all active:scale-95 ${
               isLocalScreenSharing
                 ? 'bg-transparent text-secondary border-2 border-secondary scale-105 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
                 : 'bg-transparent hover:bg-white/10 text-neutral-200 border border-white/20 hover:border-white/40'
@@ -1019,7 +1019,7 @@ function MatchPageContent() {
           {/* In-Call Games Launcher Button */}
           <button
             onClick={() => setIsGameMenuOpen(!isGameMenuOpen)}
-            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
+            className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl shrink-0 flex items-center justify-center transition-all active:scale-95 ${
               isGameMenuOpen
                 ? 'bg-transparent text-white border-2 border-white scale-105'
                 : 'bg-transparent hover:bg-white/10 text-neutral-200 border border-white/20 hover:border-white/40'
@@ -1032,7 +1032,7 @@ function MatchPageContent() {
           {/* Next Match Button (Primary & Prominent - White with Black Text) */}
           <button
             onClick={handleNextMatch}
-            className="flex-1 sm:flex-initial h-10 sm:h-11 min-w-[105px] sm:min-w-[125px] px-3.5 sm:px-5 rounded-2xl bg-white text-black text-xs sm:text-sm font-extrabold shadow-lg shadow-white/20 hover:bg-neutral-200 hover:scale-[1.03] active:scale-[0.97] transition-all flex items-center justify-center gap-1.5"
+            className="h-9 sm:h-11 px-3 sm:px-5 shrink-0 rounded-xl sm:rounded-2xl bg-white text-black text-xs sm:text-sm font-extrabold shadow-lg shadow-white/20 hover:bg-neutral-200 hover:scale-[1.03] active:scale-[0.97] transition-all flex items-center justify-center gap-1.5"
             title="Find Next Match"
           >
             <SkipForward className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black" />
@@ -1043,7 +1043,7 @@ function MatchPageContent() {
           <button
             onClick={handleSendFriendRequest}
             disabled={friendRequested}
-            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${
+            className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl shrink-0 flex items-center justify-center transition-all active:scale-95 ${
               friendRequested
                 ? 'bg-transparent text-emerald-300 border border-emerald-400'
                 : 'bg-transparent hover:bg-white/10 text-white border border-white/20 hover:border-white/40'
@@ -1056,7 +1056,7 @@ function MatchPageContent() {
           {/* Safety / Report Button */}
           <button
             onClick={() => setIsSafetyOpen(true)}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-transparent hover:bg-white/10 text-neutral-400 hover:text-white border border-white/20 hover:border-white/40 flex items-center justify-center transition-all active:scale-95"
+            className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl shrink-0 bg-transparent hover:bg-white/10 text-neutral-400 hover:text-white border border-white/20 hover:border-white/40 flex items-center justify-center transition-all active:scale-95"
             title="Safety & Moderation"
           >
             <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -1065,7 +1065,7 @@ function MatchPageContent() {
           {/* End Call Button */}
           <button
             onClick={handleLeaveCall}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-transparent hover:bg-rose-500/20 text-white hover:text-rose-300 border border-white/20 hover:border-rose-400 flex items-center justify-center transition-all active:scale-95"
+            className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl shrink-0 bg-transparent hover:bg-rose-500/20 text-white hover:text-rose-300 border border-white/20 hover:border-rose-400 flex items-center justify-center transition-all active:scale-95"
             title="End Conversation"
           >
             <PhoneOff className="w-4 h-4 sm:w-5 sm:h-5" />

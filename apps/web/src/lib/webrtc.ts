@@ -510,15 +510,18 @@ class LuraWebRTCEngine {
       try {
         const capabilities = RTCRtpReceiver.getCapabilities('video');
         if (capabilities && capabilities.codecs) {
-          // Prioritize H.264 for universal mobile (iOS Safari / Android) hardware decoding
+          // Prioritize VP8 (universal 100% WebRTC zero-black-screen compatibility across mobile & desktop) + H264
+          const vp8Codecs = capabilities.codecs.filter(
+            (c) => c.mimeType.toLowerCase() === 'video/vp8'
+          );
           const h264Codecs = capabilities.codecs.filter(
             (c) => c.mimeType.toLowerCase() === 'video/h264'
           );
           const otherCodecs = capabilities.codecs.filter(
-            (c) => c.mimeType.toLowerCase() !== 'video/h264'
+            (c) => c.mimeType.toLowerCase() !== 'video/vp8' && c.mimeType.toLowerCase() !== 'video/h264'
           );
-          if (h264Codecs.length > 0 && typeof transceiver.setCodecPreferences === 'function') {
-            transceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
+          if (typeof transceiver.setCodecPreferences === 'function') {
+            transceiver.setCodecPreferences([...vp8Codecs, ...h264Codecs, ...otherCodecs]);
           }
         }
       } catch (e) {
@@ -527,41 +530,61 @@ class LuraWebRTCEngine {
     }
   }
 
-  private prioritizeH264AndOptimizeSdp(sdp: string): string {
+  private prioritizeUniversalVideoCodecsAndOptimizeSdp(sdp: string): string {
     let optimized = this.optimizeOpusSdp(sdp);
 
-    // Prioritize H264 in video section for 100% Mobile (iOS Safari / Android) hardware decoding compatibility
-    const videoMediaRegex = /m=video (\d+) ([\w\/]+) ([\d\s]+)/;
+    const videoMediaRegex = /m=video (\d+) ([\w\/]+) ([^\r\n]+)/;
     const match = optimized.match(videoMediaRegex);
     if (!match) return optimized;
 
     const currentPayloads = match[3].trim().split(/\s+/);
     
-    // Find all H264 payload IDs from rtpmap lines
+    // Find all VP8 and H264 payload IDs from rtpmap lines
+    const vp8Payloads: string[] = [];
     const h264Payloads: string[] = [];
     const otherPayloads: string[] = [];
     
-    const rtpmapRegex = /a=rtpmap:(\d+)\s+H264\/90000/gi;
+    const vp8Regex = /a=rtpmap:(\d+)\s+VP8\/90000/gi;
+    let vp8Match: RegExpExecArray | null;
+    const vp8Ids = new Set<string>();
+    while ((vp8Match = vp8Regex.exec(optimized)) !== null) {
+      vp8Ids.add(vp8Match[1]);
+    }
+
+    const h264Regex = /a=rtpmap:(\d+)\s+H264\/90000/gi;
     let rtpMatch: RegExpExecArray | null;
     const h264Ids = new Set<string>();
-    while ((rtpMatch = rtpmapRegex.exec(optimized)) !== null) {
+    while ((rtpMatch = h264Regex.exec(optimized)) !== null) {
       h264Ids.add(rtpMatch[1]);
     }
 
     currentPayloads.forEach((pt) => {
-      if (h264Ids.has(pt)) {
+      if (vp8Ids.has(pt)) {
+        vp8Payloads.push(pt);
+      } else if (h264Ids.has(pt)) {
         h264Payloads.push(pt);
       } else {
         otherPayloads.push(pt);
       }
     });
 
-    if (h264Payloads.length > 0) {
-      const newPayloadOrder = [...h264Payloads, ...otherPayloads].join(' ');
-      optimized = optimized.replace(
-        videoMediaRegex,
-        `m=video ${match[1]} ${match[2]} ${newPayloadOrder}`
-      );
+    const newPayloadOrder = [...vp8Payloads, ...h264Payloads, ...otherPayloads].join(' ');
+    optimized = optimized.replace(
+      videoMediaRegex,
+      `m=video ${match[1]} ${match[2]} ${newPayloadOrder}\r\nb=AS:3500\r\nb=TIAS:3500000`
+    );
+
+    const primaryPt = vp8Payloads[0] || h264Payloads[0];
+    if (primaryPt) {
+      const fmtpRegex = new RegExp(`a=fmtp:${primaryPt} (.*)`);
+      if (fmtpRegex.test(optimized)) {
+        optimized = optimized.replace(fmtpRegex, `a=fmtp:${primaryPt} $1;x-google-min-bitrate=1500;x-google-start-bitrate=3000;x-google-max-bitrate=4500`);
+      } else {
+        optimized = optimized.replace(
+          new RegExp(`a=rtpmap:${primaryPt} ([^\\r\\n]+)`, 'i'),
+          `a=rtpmap:${primaryPt} $1\r\na=fmtp:${primaryPt} x-google-min-bitrate=1500;x-google-start-bitrate=3000;x-google-max-bitrate=4500`
+        );
+      }
     }
 
     return optimized;
@@ -596,6 +619,7 @@ class LuraWebRTCEngine {
     }
 
     if (payload.type === 'screen:start') {
+      this.isRemoteScreenSharingActive = true;
       let vStream = this.remoteVideoStream;
       if (!vStream && this.pc) {
         const vReceiver = this.pc.getReceivers().find((r) => r.track?.kind === 'video');
@@ -604,9 +628,7 @@ class LuraWebRTCEngine {
           this.remoteVideoStream = vStream;
         }
       }
-      if (vStream) {
-        useCallStore.getState().setRemoteScreenSharing(true, vStream);
-      }
+      useCallStore.getState().setRemoteScreenSharing(true, vStream);
       return;
     }
 
@@ -645,7 +667,7 @@ class LuraWebRTCEngine {
 
         const answer = await this.pc.createAnswer();
         if (answer.sdp) {
-          answer.sdp = this.prioritizeH264AndOptimizeSdp(answer.sdp);
+          answer.sdp = this.prioritizeUniversalVideoCodecsAndOptimizeSdp(answer.sdp);
         }
         await this.pc.setLocalDescription(answer);
 
@@ -666,6 +688,18 @@ class LuraWebRTCEngine {
           await this.pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
           this.isSettingRemote = false;
           await this.flushQueuedIceCandidates();
+
+          if (this.screenSender) {
+            try {
+              const params = this.screenSender.getParameters();
+              if (params && params.encodings && params.encodings.length > 0) {
+                params.encodings[0].maxBitrate = 3_500_000;
+                params.encodings[0].maxFramerate = 30;
+                params.encodings[0].scaleResolutionDownBy = 1.0;
+                await this.screenSender.setParameters(params).catch(() => {});
+              }
+            } catch {}
+          }
 
           const vReceiver = this.pc.getReceivers().find((r) => r.track?.kind === 'video');
           if (vReceiver && vReceiver.track) {
@@ -717,15 +751,15 @@ class LuraWebRTCEngine {
         return null;
       }
 
-      // P2P WebRTC Path: Strictly capture OS display/screen with optimized constraints (1080p max, 30fps)
+      // P2P WebRTC Path: Capture OS display/screen in Full HD 1080p
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: {
             displaySurface: 'monitor',
-            frameRate: { ideal: 24, max: 30 },
-            width: { max: 1920 },
-            height: { max: 1080 },
+            frameRate: { ideal: 30, max: 30 },
+            width: { ideal: 1920, max: 2560 },
+            height: { ideal: 1080, max: 1440 },
           },
           audio: false,
         });
@@ -772,6 +806,11 @@ class LuraWebRTCEngine {
           this.screenSender = vTransceiver.sender;
           this.setPreferredVideoCodecs(vTransceiver);
           vTransceiver.direction = 'sendrecv';
+          if ('degradationPreference' in vTransceiver) {
+            try {
+              (vTransceiver as any).degradationPreference = 'maintain-resolution';
+            } catch {}
+          }
           await vTransceiver.sender.replaceTrack(videoTrack).catch(() => {});
         } else {
           if (this.screenSender) {
@@ -786,6 +825,11 @@ class LuraWebRTCEngine {
           if (newTransceiver) {
             this.setPreferredVideoCodecs(newTransceiver);
             newTransceiver.direction = 'sendrecv';
+            if ('degradationPreference' in newTransceiver) {
+              try {
+                (newTransceiver as any).degradationPreference = 'maintain-resolution';
+              } catch {}
+            }
           }
         }
 
@@ -796,7 +840,7 @@ class LuraWebRTCEngine {
               offerToReceiveVideo: true,
             });
             if (offer.sdp) {
-              offer.sdp = this.prioritizeH264AndOptimizeSdp(offer.sdp);
+              offer.sdp = this.prioritizeUniversalVideoCodecsAndOptimizeSdp(offer.sdp);
             }
             await this.pc.setLocalDescription(offer);
             socketClient.send('webrtc:signal', {
