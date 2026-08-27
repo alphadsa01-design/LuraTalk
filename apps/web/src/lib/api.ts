@@ -1,15 +1,15 @@
-function getApiBase(): string {
+export function getApiBase(): string {
   let url = process.env.NEXT_PUBLIC_API_URL;
-  if (!url) {
-    if (typeof window !== 'undefined') {
-      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        url = 'http://localhost:8080';
-      } else {
-        url = window.location.origin;
-      }
-    } else {
-      url = 'http://localhost:8080';
+  if (typeof window !== 'undefined') {
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!url || (!isLocalhost && (url.includes('localhost') || url.includes('127.0.0.1')))) {
+      url = window.location.origin;
     }
+    if (window.location.protocol === 'https:' && url.startsWith('http://') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+      url = url.replace(/^http:\/\//, 'https://');
+    }
+  } else {
+    url = url || 'http://localhost:8080';
   }
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     url = (typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'https://' : 'http://') + url;
@@ -17,7 +17,7 @@ function getApiBase(): string {
   return url.replace(/\/+$/, '');
 }
 
-const API_BASE = getApiBase();
+export const API_BASE = getApiBase();
 
 export interface UserPreferencesPayload {
   username?: string;

@@ -55,11 +55,16 @@ class AuraSocketClient {
       }
     }
 
+    // Auto-promote ws:// to wss:// if frontend is loaded over HTTPS (prevents Mixed Content blocks)
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && wsUrl.startsWith('ws://')) {
+      wsUrl = wsUrl.replace(/^ws:\/\//, 'wss://');
+    }
+
     const separator = wsUrl.includes('?') ? '&' : '?';
     const authenticatedWsUrl = `${wsUrl}${separator}token=${encodeURIComponent(token)}`;
 
     try {
-      this.ws = new WebSocket(authenticatedWsUrl, ['aura-auth', token]);
+      this.ws = new WebSocket(authenticatedWsUrl);
 
       this.ws.onopen = () => {
         this.isConnecting = false;

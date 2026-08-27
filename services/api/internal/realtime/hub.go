@@ -193,6 +193,17 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		token = r.URL.Query().Get("token")
 	}
 
+	if protoHeader := r.Header.Get("Sec-WebSocket-Protocol"); protoHeader != "" && selectedSubprotocol == "" {
+		protocols := strings.Split(protoHeader, ",")
+		for _, p := range protocols {
+			trimmed := strings.TrimSpace(p)
+			if strings.EqualFold(trimmed, "aura-auth") {
+				selectedSubprotocol = "aura-auth"
+				break
+			}
+		}
+	}
+
 	if token == "" {
 		http.Error(w, "Unauthorized: missing websocket authorization header or protocol", http.StatusUnauthorized)
 		return
@@ -226,6 +237,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 			}
 			return h.Cfg.IsOriginAllowed(origin)
 		},
+		Subprotocols: []string{"aura-auth"},
 	}
 
 	var respHeader http.Header
