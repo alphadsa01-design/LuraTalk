@@ -744,6 +744,9 @@ class LuraWebRTCEngine {
       }
 
       this.localScreenStream = stream;
+      // Update local UI immediately so laptop user instantly sees their shared screen
+      useCallStore.getState().setLocalScreenSharing(true, stream);
+
       const videoTrack = stream.getVideoTracks()[0];
 
       if (!videoTrack) {
@@ -751,7 +754,7 @@ class LuraWebRTCEngine {
       }
 
       if ('contentHint' in videoTrack) {
-        videoTrack.contentHint = 'motion';
+        videoTrack.contentHint = 'detail';
       }
 
       // Handle user clicking native browser "Stop Sharing" floating bar
@@ -760,50 +763,30 @@ class LuraWebRTCEngine {
       };
 
       if (this.pc) {
-        if (this.screenSender) {
-          try {
-            this.pc.removeTrack(this.screenSender);
-          } catch {}
-        }
-        this.screenSender = this.pc.addTrack(videoTrack, stream);
-
-        // Ensure video sender bitrate and 30fps max
-        try {
-          const params = this.screenSender.getParameters();
-          if (!params.encodings || params.encodings.length === 0) {
-            params.encodings = [{}];
-          }
-          params.encodings[0].maxBitrate = 2_500_000;
-          params.encodings[0].maxFramerate = 30;
-          await this.screenSender.setParameters(params);
-        } catch (e) {
-          console.warn('[WebRTC] Sender parameters fallback:', e);
-        }
-
-        // Re-ensure audio sender has high network priority
-        try {
-          const audioSender = this.pc.getSenders().find((s) => s.track && s.track.kind === 'audio');
-          if (audioSender) {
-            const aParams = audioSender.getParameters();
-            if (!aParams.encodings || aParams.encodings.length === 0) {
-              aParams.encodings = [{}];
-            }
-            aParams.encodings[0].priority = 'high';
-            aParams.encodings[0].networkPriority = 'high';
-            aParams.encodings[0].maxBitrate = 64000;
-            await audioSender.setParameters(aParams);
-          }
-        } catch (e) {
-          console.warn('[WebRTC] Error prioritizing audio sender:', e);
-        }
-
         const transceivers = this.pc.getTransceivers();
-        const vTransceiver = transceivers.find(
+        let vTransceiver = transceivers.find(
           (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'
         );
-        if (vTransceiver) {
+
+        if (vTransceiver && vTransceiver.sender) {
+          this.screenSender = vTransceiver.sender;
           this.setPreferredVideoCodecs(vTransceiver);
           vTransceiver.direction = 'sendrecv';
+          await vTransceiver.sender.replaceTrack(videoTrack).catch(() => {});
+        } else {
+          if (this.screenSender) {
+            try {
+              this.pc.removeTrack(this.screenSender);
+            } catch {}
+          }
+          this.screenSender = this.pc.addTrack(videoTrack, stream);
+          const newTransceiver = this.pc.getTransceivers().find(
+            (t) => t.sender === this.screenSender
+          );
+          if (newTransceiver) {
+            this.setPreferredVideoCodecs(newTransceiver);
+            newTransceiver.direction = 'sendrecv';
+          }
         }
 
         if (this.pc.signalingState === 'stable') {
@@ -827,7 +810,6 @@ class LuraWebRTCEngine {
         socketClient.send('webrtc:signal', { type: 'screen:start' });
       }
 
-      useCallStore.getState().setLocalScreenSharing(true, stream);
       return stream;
     } catch (err: any) {
       if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
