@@ -156,6 +156,14 @@ func UpgradeAnonymousUser(cfg *config.Config, userID uuid.UUID, email, newUserna
 		return nil, errors.New("email is already in use by another account")
 	}
 
+	// Username must stay unique (case-insensitive), same rule as profile updates
+	if newUsername != "" && !strings.EqualFold(newUsername, user.Username) {
+		var taken models.User
+		if err := database.DB.Where("LOWER(username) = LOWER(?) AND id != ?", newUsername, userID).First(&taken).Error; err == nil {
+			return nil, errors.New("username is already taken by another account")
+		}
+	}
+
 	user.Email = &email
 	if newUsername != "" {
 		user.Username = newUsername

@@ -115,7 +115,8 @@ func (te *TrustEngine) UpdateTrustScore(userID uuid.UUID, delta int, reason stri
 		newScore = 0
 	}
 
-	user.TrustScore = newScore
-	database.DB.Save(&user)
+	// Only touch the trust_score column: saving the whole row would overwrite
+	// concurrent profile changes with this stale copy.
+	database.DB.Model(&models.User{}).Where("id = ?", userID).Update("trust_score", newScore)
 	return newScore
 }

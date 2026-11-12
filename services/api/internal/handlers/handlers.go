@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"log"
 	"net/http"
 	"regexp"
@@ -54,7 +56,7 @@ func (h *Handler) CreateAnonymousSession(w http.ResponseWriter, r *http.Request)
 		DeviceFingerprint string `json:"deviceFingerprint"`
 	}
 	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err.Error() != "EOF" {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 			http.Error(w, "Payload too large or invalid JSON", http.StatusBadRequest)
 			return
 		}
@@ -83,6 +85,12 @@ func (h *Handler) UpgradeAccount(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Email == "" {
+		http.Error(w, "Valid email required", http.StatusBadRequest)
+		return
+	}
+	body.Email = strings.TrimSpace(body.Email)
+	body.Username = strings.TrimSpace(body.Username)
+	if body.Email == "" || !strings.Contains(body.Email, "@") {
 		http.Error(w, "Valid email required", http.StatusBadRequest)
 		return
 	}
@@ -785,7 +793,7 @@ func (h *Handler) AdminCreateRoom(w http.ResponseWriter, r *http.Request) {
 
 	systemAdminID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	maxP := 12
-	if body.MaxParticipants > 0 {
+	if body.MaxParticipants > 0 && body.MaxParticipants <= 50 {
 		maxP = body.MaxParticipants
 	}
 
@@ -802,7 +810,10 @@ func (h *Handler) AdminCreateRoom(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:           time.Now().UTC(),
 	}
 
-	database.DB.Create(&room)
+	if err := database.DB.Create(&room).Error; err != nil {
+		http.Error(w, "Failed to create room", http.StatusInternalServerError)
+		return
+	}
 	log.Printf("[ADMIN AUDIT] ip=%s action=CREATE_ROOM roomId=%s title=%q topic=%q", r.RemoteAddr, room.ID.String(), room.Title, room.Topic)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -915,8 +926,9 @@ func (h *Handler) BlockUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Immediately update in-memory matchmaking block table
-	h.MatchEngine.AddBlock(user.ID.String(), body.BlockedID)
+	// Immediately update in-memory matchmaking block table (canonical UUID form so
+	// it matches the IDs used by matchmaking tickets)
+	h.MatchEngine.AddBlock(user.ID.String(), blockedUUID.String())
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(block)

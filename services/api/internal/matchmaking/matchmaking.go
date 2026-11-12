@@ -374,10 +374,12 @@ func (e *MatchmakingEngine) calculateMatchScore(a, b *MatchTicket) (float64, []s
 	}
 
 	// Hard constraint 2: Block list
+	// Read everything shared under the lock: the inner recentMatches maps are mutated
+	// concurrently by runMatchTick and cleanupLoop, so they must not escape the lock.
 	e.mu.RLock()
 	isBlocked := (e.userBlocks[a.UserID] != nil && e.userBlocks[a.UserID][b.UserID]) ||
 		(e.userBlocks[b.UserID] != nil && e.userBlocks[b.UserID][a.UserID])
-	recentA := e.recentMatches[a.UserID]
+	recentMatchedAt, wasRecent := e.recentMatches[a.UserID][b.UserID]
 	e.mu.RUnlock()
 
 	if isBlocked {
@@ -449,12 +451,8 @@ func (e *MatchmakingEngine) calculateMatchScore(a, b *MatchTicket) (float64, []s
 	score += (avgTrust / 100.0) * 10.0
 
 	// 6. Recent Match Penalty (-50 pts if matched within last 30 minutes)
-	if recentA != nil {
-		if matchedAt, exists := recentA[b.UserID]; exists {
-			if time.Since(matchedAt) < 30*time.Minute {
-				score -= 50.0
-			}
-		}
+	if wasRecent && time.Since(recentMatchedAt) < 30*time.Minute {
+		score -= 50.0
 	}
 
 	// 7. Country / Region preference

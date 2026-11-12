@@ -126,6 +126,7 @@ function MatchPageContent() {
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
   const [friendRequested, setFriendRequested] = useState(false);
   const friendRequestedRef = useRef(false);
+  const outgoingCallIdRef = useRef<string | null>(null);
   const [screenShareToast, setScreenShareToast] = useState<string | null>(null);
   const [micPermissionDenied, setMicPermissionDenied] = useState(false);
 
@@ -281,7 +282,8 @@ function MatchPageContent() {
 
     const triggerAutoNextMatch = () => {
       recordCallToLocalStorage();
-      webrtcEngine.cleanup();
+      // Searching again: keep the mic warm so the next match connects instantly
+      webrtcEngine.cleanup({ keepMicrophone: true });
       sounds.playEndCall();
       updateFriendRequested(false);
       resetGame();
@@ -302,7 +304,7 @@ function MatchPageContent() {
     const unsubMatch = socketClient.on('match:found', (payload: any) => {
       setDirectCallState('idle');
       sounds.playMatchFound();
-      notifications.showMatchFound(payload.partner?.username || 'Stranger');
+      notifications.showMatchFound(payload.peer?.username || 'Stranger');
       setMatchFound(payload);
       if (payload.mode === 'voice' || payload.mode === 'mystery' || initialMode !== 'text') {
         webrtcEngine.startCall({
@@ -327,7 +329,8 @@ function MatchPageContent() {
       }
     });
 
-    const unsubRinging = socketClient.on('direct:outgoing_ringing', () => {
+    const unsubRinging = socketClient.on('direct:outgoing_ringing', (data: any) => {
+      outgoingCallIdRef.current = data?.callId || null;
       setDirectCallState('ringing');
     });
 
@@ -469,7 +472,7 @@ function MatchPageContent() {
       });
     }
     sounds.playSkip();
-    webrtcEngine.cleanup();
+    webrtcEngine.cleanup({ keepMicrophone: true });
     updateFriendRequested(false);
     resetGame();
     resetCall();
@@ -522,7 +525,8 @@ function MatchPageContent() {
     sounds.playEndCall();
     webrtcEngine.cleanup();
     if (callPartnerId) {
-      socketClient.cancelDirectCall(callPartnerId);
+      socketClient.cancelDirectCall(callPartnerId, outgoingCallIdRef.current || undefined);
+      outgoingCallIdRef.current = null;
     }
     socketClient.leaveQueue();
     resetGame();
