@@ -145,7 +145,7 @@ func (h *Hub) Run() {
 						})
 					}
 					if len(room) == 0 {
-						delete(h.Rooms, activeRoom)
+						h.deleteRoomLocked(activeRoom)
 					}
 				}
 				client.ActiveRoom = ""
@@ -317,7 +317,7 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 				})
 			}
 			if len(prevRoom) == 0 {
-				delete(h.Rooms, clientA.ActiveRoom)
+				h.deleteRoomLocked(clientA.ActiveRoom)
 			}
 		}
 	}
@@ -333,7 +333,7 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 				})
 			}
 			if len(prevRoom) == 0 {
-				delete(h.Rooms, clientB.ActiveRoom)
+				h.deleteRoomLocked(clientB.ActiveRoom)
 			}
 		}
 	}
@@ -933,19 +933,12 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			h.mu.RUnlock()
 
 			if p2 == "" {
-				p2 = "peer"
+				return // games need both people in the call
 			}
 
-			session := h.GameManager.StartGame(activeRoom, payload.GameType, client.UserID, p2)
-			if payload.Data != nil {
-				if qRaw, ok := payload.Data["question"].(map[string]interface{}); ok && qRaw["question"] != nil {
-					session.CustomData["question"] = qRaw
-				}
-				if cRaw, ok := payload.Data["card"].(map[string]interface{}); ok && cRaw["optionA"] != nil {
-					session.CustomData["card"] = cRaw
-				}
+			if session := h.GameManager.StartGame(activeRoom, payload.GameType, client.UserID, p2, payload.Data); session != nil {
+				h.broadcastToRoom(activeRoom, "game:update", session)
 			}
-			h.broadcastToRoom(activeRoom, "game:update", session)
 		} else {
 			session, err := h.GameManager.HandleAction(activeRoom, client.UserID, payload.ActionType, payload.Data)
 			if err == nil && session != nil {
@@ -986,7 +979,7 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 							"reason": "blocked",
 						})
 					}
-					delete(h.Rooms, activeRoom)
+					h.deleteRoomLocked(activeRoom)
 				}
 				client.ActiveRoom = ""
 			}
@@ -1126,6 +1119,12 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 	}
 }
 
+// deleteRoomLocked removes a room and discards its game. Caller must hold h.mu.
+func (h *Hub) deleteRoomLocked(roomName string) {
+	delete(h.Rooms, roomName)
+	h.GameManager.EndGame(roomName)
+}
+
 // activeRoomOf returns the client's current room. ActiveRoom is mutated under h.mu
 // from other goroutines (matchmaking callback, peers), so reads must hold the lock too.
 func (h *Hub) activeRoomOf(c *Client) string {
@@ -1149,7 +1148,7 @@ func (h *Hub) leaveActiveRoom(client *Client, reason string) {
 				})
 			}
 			if len(roomClients) == 0 {
-				delete(h.Rooms, activeRoom)
+				h.deleteRoomLocked(activeRoom)
 			}
 		}
 		client.ActiveRoom = ""

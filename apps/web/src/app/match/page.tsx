@@ -28,7 +28,7 @@ import {
 import { useUserStore, getDicebearAvatarUrl, AVATAR_PRESETS } from '@/stores/useUserStore';
 import { useCallStore } from '@/stores/useCallStore';
 import { offerRematchForEndedCall } from '@/stores/useRematchStore';
-import { useGameStore } from '@/stores/useGameStore';
+import { useGameStore, launchGame, type GameType } from '@/stores/useGameStore';
 import { socketClient } from '@/lib/socket';
 import { getOrCreateAnonymousSession } from '@/lib/api';
 import { webrtcEngine } from '@/lib/webrtc';
@@ -41,7 +41,6 @@ import {
 } from '@/lib/storage';
 import AudioVisualizer from '@/components/AudioVisualizer';
 import ScreenShareView from '@/components/ScreenShareView';
-import { getNextCuratedDarkQuestion, getNextCuratedWYRCard } from '@/lib/aiQuestions';
 import AIWidget from '@/components/AIWidget';
 import TranslationBar from '@/components/TranslationBar';
 import GameOverlay from '@/components/GameOverlay';
@@ -122,7 +121,7 @@ function MatchPageContent() {
     resetCall,
   } = useCallStore();
 
-  const { openGame, updateGameState, closeGame, resetGame } = useGameStore();
+  const { updateGameState, resetGame } = useGameStore();
 
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
@@ -1047,7 +1046,8 @@ function MatchPageContent() {
                 ? 'bg-transparent text-white border-2 border-white scale-105'
                 : 'bg-transparent hover:bg-white/10 text-neutral-200 border border-white/20 hover:border-white/40'
             }`}
-            title="Play In-Call Mini-Games (Tic-Tac-Toe, Would You Rather, Dark Truths)"
+            title="Play games together"
+            aria-label="Play games together"
           >
             <Gamepad2 className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
@@ -1104,7 +1104,7 @@ function MatchPageContent() {
           </p>
           {[
             { id: 'tictactoe', name: 'Tic-Tac-Toe (Turn by Turn)', icon: Gamepad2 },
-            { id: 'dark_questions', name: 'Dark & Deep Truths', icon: Flame },
+            { id: 'dark_questions', name: 'Deep Questions', icon: Flame },
             { id: 'would_you_rather', name: 'Would You Rather', icon: Sparkles },
           ].map((game) => {
             const GameIcon = game.icon;
@@ -1112,18 +1112,7 @@ function MatchPageContent() {
               <button
                 key={game.id}
                 onClick={() => {
-                  let initialData: Record<string, any> = {};
-                  if (game.id === 'dark_questions') {
-                    const q = getNextCuratedDarkQuestion();
-                    initialData = { question: q };
-                    useGameStore.setState({ customData: { question: q, reactions: {} } });
-                  } else if (game.id === 'would_you_rather') {
-                    const c = getNextCuratedWYRCard();
-                    initialData = { card: c };
-                    useGameStore.setState({ customData: { card: c, votes: {} } });
-                  }
-                  socketClient.sendGameAction('start', game.id, initialData);
-                  openGame(game.id as any);
+                  launchGame(game.id as GameType, (a, t, d) => socketClient.sendGameAction(a, t, d));
                   setIsGameMenuOpen(false);
                 }}
                 className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/10 text-xs font-semibold text-white transition-colors"
