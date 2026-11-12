@@ -315,6 +315,25 @@ export async function deleteCallHistory(token: string, historyId: string) {
   return res.json();
 }
 
+export interface DailyTopic {
+  id: string;
+  emoji: string;
+  title: string;
+  prompt: string;
+}
+
+/** Topic of the day (rotates at 00:00 UTC). Returns null if the API is unreachable. */
+export async function fetchTodayTopic(): Promise<DailyTopic | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/topics/today`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.topic?.id ? (data.topic as DailyTopic) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchLiveOnlineStats(): Promise<{ onlineCount: number; activeRooms: number; queueDepth: number }> {
   try {
     const res = await fetch(`${API_BASE}/api/v1/stats/online`, {

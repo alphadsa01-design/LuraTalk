@@ -195,7 +195,8 @@ class LuraWebRTCEngine {
   }
 
   public async startCall(options: WebRTCVoiceOptions) {
-    this.cleanup();
+    // Keep a pre-warmed microphone stream (warmupMicrophone) for the new call
+    this.cleanup({ keepMicrophone: true });
     this.isCalling = true;
     this.iceCandidatesQueue = [];
     this.pendingOffer = null;
@@ -248,6 +249,13 @@ class LuraWebRTCEngine {
       } catch (err) {
         console.warn('[VoiceEngine] LiveKit SFU failed, falling back to TURN P2P WebRTC:', err);
       }
+      // Tear down the half-open LiveKit room so it cannot connect late and play
+      // audio alongside the P2P fallback
+      if (this.livekitRoom) {
+        this.livekitRoom.disconnect().catch(() => {});
+        this.livekitRoom = null;
+      }
+      this.isUsingLiveKit = false;
     }
 
     // Strategy 2: Enterprise P2P WebRTC with Google STUN (sub-50ms connection)
@@ -304,10 +312,15 @@ class LuraWebRTCEngine {
 
     // Try connecting with a 2.5-second timeout so fallback to TURN P2P WebRTC is fast & seamless
     const connectPromise = room.connect(options.livekitUrl!, options.livekitToken!);
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('LiveKit connect timeout')), 2500)
-    );
-    await Promise.race([connectPromise, timeoutPromise]);
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('LiveKit connect timeout')), 2500);
+    });
+    try {
+      await Promise.race([connectPromise, timeoutPromise]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
 
     await room.localParticipant.setMicrophoneEnabled(!this.isMuted);
 
@@ -675,7 +688,11 @@ class LuraWebRTCEngine {
         if (vReceiver && vReceiver.track) {
           const vStream = new MediaStream([vReceiver.track]);
           this.remoteVideoStream = vStream;
-          useCallStore.getState().setRemoteScreenSharing(true, vStream);
+          // Only show the remote screen if the peer actually announced a share; renegotiation
+          // offers (e.g. after the peer stopped sharing) still carry an idle video receiver
+          if (this.isRemoteScreenSharingActive) {
+            useCallStore.getState().setRemoteScreenSharing(true, vStream);
+          }
         }
 
         socketClient.send('webrtc:signal', {
@@ -868,10 +885,8 @@ class LuraWebRTCEngine {
   }
 
   public async stopScreenShare() {
-    // 1. Immediately reset store state on self for 0ms transition
+    // 1. Immediately reset local share state for 0ms transition (the peer's own share, if any, is untouched)
     useCallStore.getState().setLocalScreenSharing(false, null);
-    useCallStore.getState().setRemoteScreenSharing(false, null);
-    this.remoteVideoStream = null;
 
     // 2. Broadcast screen:stop to peer immediately via WebSocket
     socketClient.send('webrtc:signal', { type: 'screen:stop' });
@@ -1115,8 +1130,9 @@ class LuraWebRTCEngine {
     }
   }
 
-  public cleanup() {
+  public cleanup(opts: { keepMicrophone?: boolean } = {}) {
     this.isCalling = false;
+    this.isRemoteScreenSharingActive = false;
     this.releaseWakeLock();
 
     if (this.silentAudio) {
@@ -1173,6 +1189,13 @@ class LuraWebRTCEngine {
     }
     this.remoteStream = null;
     this.currentAnalyzedStreamId = null;
+    this.localAnalyser = null;
+
+    // Release the microphone when the call ends so the browser stops capturing audio
+    if (!opts.keepMicrophone && this.localStream) {
+      this.localStream.getTracks().forEach((track) => track.stop());
+      this.localStream = null;
+    }
     this.iceCandidatesQueue = [];
     this.pendingOffer = null;
     this.isSettingRemote = false;

@@ -27,7 +27,8 @@ import {
 } from 'lucide-react';
 import { useUserStore, getDicebearAvatarUrl, AVATAR_PRESETS } from '@/stores/useUserStore';
 import { useCallStore } from '@/stores/useCallStore';
-import { useGameStore } from '@/stores/useGameStore';
+import { offerRematchForEndedCall } from '@/stores/useRematchStore';
+import { useGameStore, launchGame, type GameType } from '@/stores/useGameStore';
 import { socketClient } from '@/lib/socket';
 import { getOrCreateAnonymousSession } from '@/lib/api';
 import { webrtcEngine } from '@/lib/webrtc';
@@ -40,7 +41,6 @@ import {
 } from '@/lib/storage';
 import AudioVisualizer from '@/components/AudioVisualizer';
 import ScreenShareView from '@/components/ScreenShareView';
-import { getNextCuratedDarkQuestion, getNextCuratedWYRCard } from '@/lib/aiQuestions';
 import AIWidget from '@/components/AIWidget';
 import TranslationBar from '@/components/TranslationBar';
 import GameOverlay from '@/components/GameOverlay';
@@ -98,6 +98,7 @@ function MatchPageContent() {
     messages,
     isPeerTyping,
     icebreakerSuggestion,
+    topic: callTopic,
     liveTranslationCaption,
     isLocalScreenSharing,
     isRemoteScreenSharing,
@@ -120,12 +121,13 @@ function MatchPageContent() {
     resetCall,
   } = useCallStore();
 
-  const { openGame, updateGameState, closeGame, resetGame } = useGameStore();
+  const { updateGameState, resetGame } = useGameStore();
 
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
   const [friendRequested, setFriendRequested] = useState(false);
   const friendRequestedRef = useRef(false);
+  const outgoingCallIdRef = useRef<string | null>(null);
   const [screenShareToast, setScreenShareToast] = useState<string | null>(null);
   const [micPermissionDenied, setMicPermissionDenied] = useState(false);
 
@@ -257,6 +259,7 @@ function MatchPageContent() {
 
     const recordCallToLocalStorage = () => {
       const state = useCallStore.getState();
+      offerRematchForEndedCall(state.peer, state.roomName, state.callDuration || 0, friendRequestedRef.current);
       if (state.peer) {
         saveLocalCallHistoryItem({
           id: state.matchId || `call_${Date.now()}`,
@@ -281,7 +284,8 @@ function MatchPageContent() {
 
     const triggerAutoNextMatch = () => {
       recordCallToLocalStorage();
-      webrtcEngine.cleanup();
+      // Searching again: keep the mic warm so the next match connects instantly
+      webrtcEngine.cleanup({ keepMicrophone: true });
       sounds.playEndCall();
       updateFriendRequested(false);
       resetGame();
@@ -296,13 +300,14 @@ function MatchPageContent() {
         intention,
         countryPreference,
         oneQuestionAnswer,
+        topic: useUserStore.getState().topicOptInId || undefined,
       });
     };
 
     const unsubMatch = socketClient.on('match:found', (payload: any) => {
       setDirectCallState('idle');
       sounds.playMatchFound();
-      notifications.showMatchFound(payload.partner?.username || 'Stranger');
+      notifications.showMatchFound(payload.peer?.username || 'Stranger');
       setMatchFound(payload);
       if (payload.mode === 'voice' || payload.mode === 'mystery' || initialMode !== 'text') {
         webrtcEngine.startCall({
@@ -327,7 +332,8 @@ function MatchPageContent() {
       }
     });
 
-    const unsubRinging = socketClient.on('direct:outgoing_ringing', () => {
+    const unsubRinging = socketClient.on('direct:outgoing_ringing', (data: any) => {
+      outgoingCallIdRef.current = data?.callId || null;
       setDirectCallState('ringing');
     });
 
@@ -443,11 +449,13 @@ function MatchPageContent() {
       intention,
       countryPreference,
       oneQuestionAnswer,
+      topic: useUserStore.getState().topicOptInId || undefined,
     });
   };
 
   const handleNextMatch = () => {
     const state = useCallStore.getState();
+    offerRematchForEndedCall(state.peer, state.roomName, state.callDuration || 0, friendRequestedRef.current);
     if (state.peer) {
       saveLocalCallHistoryItem({
         id: state.matchId || `call_${Date.now()}`,
@@ -469,7 +477,7 @@ function MatchPageContent() {
       });
     }
     sounds.playSkip();
-    webrtcEngine.cleanup();
+    webrtcEngine.cleanup({ keepMicrophone: true });
     updateFriendRequested(false);
     resetGame();
     resetCall();
@@ -482,11 +490,13 @@ function MatchPageContent() {
       intention,
       countryPreference,
       oneQuestionAnswer,
+      topic: useUserStore.getState().topicOptInId || undefined,
     });
   };
 
   const handleLeaveCall = () => {
     const state = useCallStore.getState();
+    offerRematchForEndedCall(state.peer, state.roomName, state.callDuration || 0, friendRequestedRef.current);
     if (state.peer) {
       saveLocalCallHistoryItem({
         id: state.matchId || `call_${Date.now()}`,
@@ -522,7 +532,8 @@ function MatchPageContent() {
     sounds.playEndCall();
     webrtcEngine.cleanup();
     if (callPartnerId) {
-      socketClient.cancelDirectCall(callPartnerId);
+      socketClient.cancelDirectCall(callPartnerId, outgoingCallIdRef.current || undefined);
+      outgoingCallIdRef.current = null;
     }
     socketClient.leaveQueue();
     resetGame();
@@ -892,6 +903,17 @@ function MatchPageContent() {
               />
             )}
 
+            {/* Topic of the day: both people opted in */}
+            {callTopic && (
+              <div className="glass-panel px-4 py-3 rounded-2xl border border-white/15 text-xs">
+                <div className="flex items-center gap-2 text-white font-semibold">
+                  <span aria-hidden="true">{callTopic.emoji}</span>
+                  <span>Today&rsquo;s topic: {callTopic.title}</span>
+                </div>
+                <p className="mt-1 text-neutral-300">{callTopic.prompt}</p>
+              </div>
+            )}
+
             {/* AI Icebreaker Card (Clean, Unobtrusive, Single-Line Strip) */}
             {icebreakerSuggestion && (
               <div className="glass-panel px-4 py-2.5 rounded-2xl border border-white/15 flex items-center justify-between gap-3 text-xs">
@@ -1024,7 +1046,8 @@ function MatchPageContent() {
                 ? 'bg-transparent text-white border-2 border-white scale-105'
                 : 'bg-transparent hover:bg-white/10 text-neutral-200 border border-white/20 hover:border-white/40'
             }`}
-            title="Play In-Call Mini-Games (Tic-Tac-Toe, Would You Rather, Dark Truths)"
+            title="Play games together"
+            aria-label="Play games together"
           >
             <Gamepad2 className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
@@ -1081,7 +1104,7 @@ function MatchPageContent() {
           </p>
           {[
             { id: 'tictactoe', name: 'Tic-Tac-Toe (Turn by Turn)', icon: Gamepad2 },
-            { id: 'dark_questions', name: 'Dark & Deep Truths', icon: Flame },
+            { id: 'dark_questions', name: 'Deep Questions', icon: Flame },
             { id: 'would_you_rather', name: 'Would You Rather', icon: Sparkles },
           ].map((game) => {
             const GameIcon = game.icon;
@@ -1089,18 +1112,7 @@ function MatchPageContent() {
               <button
                 key={game.id}
                 onClick={() => {
-                  let initialData: Record<string, any> = {};
-                  if (game.id === 'dark_questions') {
-                    const q = getNextCuratedDarkQuestion();
-                    initialData = { question: q };
-                    useGameStore.setState({ customData: { question: q, reactions: {} } });
-                  } else if (game.id === 'would_you_rather') {
-                    const c = getNextCuratedWYRCard();
-                    initialData = { card: c };
-                    useGameStore.setState({ customData: { card: c, votes: {} } });
-                  }
-                  socketClient.sendGameAction('start', game.id, initialData);
-                  openGame(game.id as any);
+                  launchGame(game.id as GameType, (a, t, d) => socketClient.sendGameAction(a, t, d));
                   setIsGameMenuOpen(false);
                 }}
                 className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/10 text-xs font-semibold text-white transition-colors"

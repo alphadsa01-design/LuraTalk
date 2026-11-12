@@ -77,3 +77,26 @@ func TestSelfMatchPrevented(t *testing.T) {
 		t.Fatalf("Self match must be prohibited, got %f", score)
 	}
 }
+
+func TestSharedTopicBoostsMatchScore(t *testing.T) {
+	e := &MatchmakingEngine{
+		recentMatches: map[string]map[string]time.Time{},
+		userBlocks:    map[string]map[string]bool{},
+	}
+	base := UserPreferences{NativeLanguage: "en", Mood: "chill", Intention: "casual"}
+	withTopic := base
+	withTopic.Topic = "best-trip"
+
+	a := &MatchTicket{UserID: "a", TrustScore: 100, Preferences: withTopic}
+	sameTopic := &MatchTicket{UserID: "b", TrustScore: 100, Preferences: withTopic}
+	noTopic := &MatchTicket{UserID: "c", TrustScore: 100, Preferences: base}
+
+	s1, _ := e.calculateMatchScore(a, sameTopic)
+	s2, _ := e.calculateMatchScore(a, noTopic)
+	if s1 <= s2 {
+		t.Fatalf("shared topic should score higher: %v vs %v", s1, s2)
+	}
+	if s2 <= -500 {
+		t.Fatal("not sharing a topic must never block a match")
+	}
+}

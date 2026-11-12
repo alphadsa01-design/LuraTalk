@@ -1,30 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
-import {
-  Gamepad2,
-  X,
-  RefreshCw,
-  CheckCircle2,
-  Sparkles,
-  Trophy,
-  Flame,
-  SmilePlus,
-} from 'lucide-react';
-import {
-  useGameStore,
-  GameType,
-  DARK_QUESTIONS,
-  DEFAULT_WYR_CARDS,
-} from '@/stores/useGameStore';
+import React, { useEffect, useRef, useState } from 'react';
+import { Gamepad2, X, RefreshCw, CheckCircle2, Sparkles, Trophy, MessageCircleQuestion } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
+import { useGameStore, launchGame, GameType } from '@/stores/useGameStore';
 import {
   generateAIDarkQuestion,
   generateAIWYRCard,
   getNextCuratedDarkQuestion,
   getNextCuratedWYRCard,
   ALL_DARK_QUESTIONS,
+  ALL_WYR_CARDS,
 } from '@/lib/aiQuestions';
-import { motion, AnimatePresence } from 'framer-motion';
 import { sounds } from '@/lib/sounds';
 
 interface GameOverlayProps {
@@ -35,580 +22,415 @@ interface GameOverlayProps {
 }
 
 const WINNING_COMBOS = [
-  [0, 1, 2],
-  [3, 4, 5],
-  [6, 7, 8],
-  [0, 3, 6],
-  [1, 4, 7],
-  [2, 5, 8],
-  [0, 4, 8],
-  [2, 4, 6],
+  [0, 1, 2], [3, 4, 5], [6, 7, 8],
+  [0, 3, 6], [1, 4, 7], [2, 5, 8],
+  [0, 4, 8], [2, 4, 6],
 ];
 
-function checkWinner(board: string[]) {
+function winningLine(board: string[]): number[] | null {
   for (const combo of WINNING_COMBOS) {
     const [a, b, c] = combo;
-    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-      return { winner: board[a], line: combo };
-    }
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) return combo;
   }
-  return { winner: null, line: null };
+  return null;
 }
 
-const REACTION_EMOJIS = ['🔥', '💀', '😱', '🤫', '🤯', '🤐'];
+/** Must match the server's allowed reactions (services/api/internal/games/engine.go). */
+const REACTION_EMOJIS = ['🔥', '😂', '😱', '🤔', '🤯', '❤️'];
+
+const TABS: { id: GameType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'tictactoe', label: 'Tic-Tac-Toe', icon: Gamepad2 },
+  { id: 'dark_questions', label: 'Questions', icon: MessageCircleQuestion },
+  { id: 'would_you_rather', label: 'Would You', icon: Sparkles },
+];
+
+const btnBase =
+  'inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-xl text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-50';
+const btnSecondary = `${btnBase} border border-white/25 text-white hover:bg-white/10`;
+const btnPrimary = `${btnBase} bg-white text-black hover:bg-neutral-200`;
 
 export default function GameOverlay({
-  currentUserId,
+  currentUserId = '',
   peerName = 'Partner',
   isInitiator = true,
   onSendAction,
 }: GameOverlayProps) {
-  const {
-    isOpen,
-    gameType,
-    board,
-    players,
-    turn,
-    status,
-    winner,
-    customData,
-    scores,
-    openGame,
-    closeGame,
-  } = useGameStore();
-
+  const { isOpen, gameType, board, players, turn, status, winner, customData, scores, closeGame } = useGameStore();
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const reduceMotion = useReducedMotion();
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const me = currentUserId || 'me';
+
+  // Keyboard: Escape closes; focus moves into the dialog when it opens
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevFocus = document.activeElement as HTMLElement | null;
+    closeBtnRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeGame();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      prevFocus?.focus?.();
+    };
+  }, [isOpen, closeGame]);
 
   if (!isOpen) return null;
 
-  // Active game card data with instant fallbacks
-  const activeDarkQuestion =
-    customData?.question || ALL_DARK_QUESTIONS[0];
-  const activeCard =
-    customData?.card || DEFAULT_WYR_CARDS[0];
+  const activeQuestion = customData?.question || ALL_DARK_QUESTIONS[0];
+  const activeCard = customData?.card || ALL_WYR_CARDS[0];
 
-  // --- TIC-TAC-TOE TURN & SYMBOL LOGIC ---
-  // Initiator is always 'X' (goes first), Receiver is always 'O' (goes second)
-  const mySymbol: 'X' | 'O' = isInitiator ? 'X' : 'O';
-  const peerSymbol: 'X' | 'O' = isInitiator ? 'O' : 'X';
+  // --- Tic-Tac-Toe: the server assigns symbols and turns; fall back to call roles until it answers ---
+  const symbols: Record<string, string> = customData?.symbols || {};
+  const mySymbol = (symbols[me] as 'X' | 'O') || (isInitiator ? 'X' : 'O');
+  const peerSymbol = mySymbol === 'X' ? 'O' : 'X';
+  const filled = board.filter((c) => c !== '').length;
+  const isMyTurn =
+    status === 'in_progress' && (turn ? turn === me : (filled % 2 === 0 ? 'X' : 'O') === mySymbol);
+  const line = winningLine(board);
+  const iWon = status === 'won' && (winner === me || (!!line && board[line[0]] === mySymbol));
+  const peerId = players.find((p) => p !== me);
+  const myScore = scores?.[me] ?? 0;
+  const peerScore = peerId ? scores?.[peerId] ?? 0 : 0;
 
-  const filledCount = board.filter((c) => c !== '').length;
-  const currentTurnSymbol: 'X' | 'O' = filledCount % 2 === 0 ? 'X' : 'O';
+  const send = (action: string, type: GameType, data?: any) => onSendAction(action, type, data);
 
-  // Determine if it's currently MY turn
-  const isMyTurn = status === 'in_progress' && currentTurnSymbol === mySymbol;
-
-  const { line: winningLine, winner: detectedWinSymbol } = checkWinner(board);
-
-  // Format winner banner display text
-  const getWinnerText = () => {
-    const activeWin = winner || detectedWinSymbol;
-    if (!activeWin) return 'Winner Declared!';
-    if (activeWin === mySymbol || activeWin === currentUserId) return 'You Won the Game!';
-    return `${peerName} Won the Game!`;
-  };
-
-  // --- Handlers ---
-  const handleTicTacToeMove = (idx: number) => {
-    if (!isMyTurn || board[idx] !== '' || status !== 'in_progress') return;
+  const handleMove = (idx: number) => {
+    if (!isMyTurn || board[idx] !== '') return;
     sounds.playClick();
-
-    const nextBoard = [...board];
-    nextBoard[idx] = mySymbol;
-
-    const { winner: winSymbol } = checkWinner(nextBoard);
-    let nextStatus = 'in_progress';
-    let nextWinner: string | null = null;
-
-    if (winSymbol) {
-      nextStatus = 'won';
-      nextWinner = winSymbol;
-    } else if (nextBoard.every((c) => c !== '')) {
-      nextStatus = 'draw';
-    }
-
-    useGameStore.setState({
-      board: nextBoard,
-      status: nextStatus,
-      winner: nextWinner,
-    });
-
-    onSendAction('move', 'tictactoe', {
-      cell: idx,
-      symbol: mySymbol,
-      board: nextBoard,
-      status: nextStatus,
-      winner: nextWinner,
-    });
+    const next = [...board];
+    next[idx] = mySymbol;
+    // Optimistic: show the move and hand the turn over; the server's update is authoritative
+    useGameStore.setState({ board: next, turn: peerId || null });
+    send('move', 'tictactoe', { cell: idx });
   };
 
-  const handleResetTicTacToe = () => {
+  const handleReset = () => {
     sounds.playClick();
-    const emptyBoard = Array(9).fill('');
-    useGameStore.setState({
-      board: emptyBoard,
-      status: 'in_progress',
-      winner: null,
-    });
-    onSendAction('reset', 'tictactoe', { board: emptyBoard, status: 'in_progress' });
+    useGameStore.setState({ board: Array(9).fill(''), status: 'in_progress', winner: null });
+    send('reset', 'tictactoe');
   };
 
-  // Dark & Sexy Questions Handlers (Non-Repeating Curated Queue)
-  const handleNextDarkQuestion = () => {
+  // --- Questions ---
+  const showQuestion = (question: any) => {
+    useGameStore.setState({ customData: { ...customData, question, reactions: {} }, status: 'in_progress' });
+    send('next', 'dark_questions', { question });
+  };
+  const handleNextQuestion = () => {
     sounds.playClick();
-    const nextQ = getNextCuratedDarkQuestion();
-    useGameStore.setState({
-      customData: { question: nextQ, reactions: {} },
-      status: 'in_progress',
-    });
-    onSendAction('next', 'dark_questions', { question: nextQ });
+    showQuestion(getNextCuratedDarkQuestion());
   };
-
-  const handleSparkAIDarkQuestion = async () => {
+  const handleAIQuestion = async () => {
     sounds.playClick();
     setIsGeneratingAI(true);
     try {
-      const aiQ = await generateAIDarkQuestion();
-      useGameStore.setState({
-        customData: { question: aiQ, reactions: {} },
-        status: 'in_progress',
-      });
-      onSendAction('next', 'dark_questions', { question: aiQ });
+      showQuestion(await generateAIDarkQuestion());
     } finally {
       setIsGeneratingAI(false);
     }
   };
-
-  const handleReactDarkQuestion = (emoji: string) => {
+  const handleReact = (emoji: string) => {
     sounds.playClick();
-    const currentReactions = { ...(customData?.reactions || {}) };
-    currentReactions[currentUserId || 'me'] = emoji;
-    useGameStore.setState({
-      customData: { ...customData, reactions: currentReactions },
-    });
-    onSendAction('react', 'dark_questions', { reaction: emoji, reactions: currentReactions });
+    useGameStore.setState({ customData: { ...customData, reactions: { ...(customData?.reactions || {}), [me]: emoji } } });
+    send('react', 'dark_questions', { reaction: emoji });
   };
 
-  // WYR Handlers
-  const handleWYRVote = (optionKey: string) => {
-    sounds.playClick();
-    const updatedVotes = { ...(customData?.votes || {}), [currentUserId || 'me']: optionKey };
-    useGameStore.setState({
-      customData: { ...customData, card: activeCard, votes: updatedVotes },
-      status: 'completed',
-    });
-    onSendAction('vote', 'would_you_rather', { option: optionKey, votes: updatedVotes });
-  };
+  // --- Would You Rather ---
+  const votes: Record<string, string> = customData?.votes || {};
+  const myVote = votes[me];
+  const peerVote = peerId ? votes[peerId] : undefined;
+  const revealed = status === 'completed' && !!myVote && !!peerVote;
 
-  const handleNextWYR = () => {
+  const handleVote = (option: 'optionA' | 'optionB') => {
+    if (status === 'completed') return;
     sounds.playClick();
-    const nextCard = getNextCuratedWYRCard();
-    useGameStore.setState({
-      customData: { card: nextCard, votes: {} },
-      status: 'in_progress',
-    });
-    onSendAction('next', 'would_you_rather', { card: nextCard });
+    useGameStore.setState({ customData: { ...customData, votes: { ...votes, [me]: option } } });
+    send('vote', 'would_you_rather', { option });
   };
-
-  const handleSparkAIWYR = async () => {
+  const showCard = (card: any) => {
+    useGameStore.setState({ customData: { ...customData, card, votes: {} }, status: 'in_progress' });
+    send('next', 'would_you_rather', { card });
+  };
+  const handleNextCard = () => {
+    sounds.playClick();
+    showCard(getNextCuratedWYRCard());
+  };
+  const handleAICard = async () => {
     sounds.playClick();
     setIsGeneratingAI(true);
     try {
-      const aiCard = await generateAIWYRCard();
-      useGameStore.setState({
-        customData: { card: aiCard, votes: {} },
-        status: 'in_progress',
-      });
-      onSendAction('next', 'would_you_rather', { card: aiCard });
+      showCard(await generateAIWYRCard());
     } finally {
       setIsGeneratingAI(false);
     }
   };
 
   const handleSwitchGame = (type: GameType) => {
+    if (type === gameType) return;
     sounds.playClick();
-    let initialData: Record<string, any> = {};
-    if (type === 'dark_questions') {
-      const q = getNextCuratedDarkQuestion();
-      initialData = { question: q };
-      useGameStore.setState({ customData: { question: q, reactions: {} } });
-    } else if (type === 'would_you_rather') {
-      const c = getNextCuratedWYRCard();
-      initialData = { card: c };
-      useGameStore.setState({ customData: { card: c, votes: {} } });
-    }
-    openGame(type);
-    onSendAction('start', type, initialData);
+    launchGame(type, send);
   };
 
+  const pop = reduceMotion ? { initial: { opacity: 0 }, animate: { opacity: 1 } } : { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 } };
+
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-xl animate-fade-in">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 15 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="relative w-full max-w-lg border border-white/15 rounded-3xl p-4 sm:p-6 shadow-2xl bg-black/90 flex flex-col space-y-4 max-h-[92vh] overflow-y-auto custom-scrollbar"
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-white/10">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl border border-white/20 bg-transparent flex items-center justify-center">
-                <Gamepad2 className="w-4 h-4 text-white" />
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-6"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) closeGame();
+      }}
+    >
+      <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="game-dialog-title"
+        {...pop}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className="w-full sm:max-w-lg bg-zinc-950 border border-white/15 rounded-t-3xl sm:rounded-3xl p-4 sm:p-6 flex flex-col gap-4 max-h-[92dvh] overflow-y-auto overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))]"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 id="game-dialog-title" className="text-base font-bold text-white">Play together</h2>
+            <p className="text-xs text-neutral-400 truncate">Live with {peerName}</p>
+          </div>
+          <button
+            ref={closeBtnRef}
+            onClick={() => {
+              sounds.playClick();
+              closeGame();
+            }}
+            className="w-11 h-11 shrink-0 flex items-center justify-center rounded-xl border border-white/15 text-neutral-300 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70"
+            aria-label="Close games"
+            title="Close (Esc)"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Game tabs */}
+        <div role="tablist" aria-label="Games" className="grid grid-cols-3 gap-1 p-1 rounded-2xl border border-white/15">
+          {TABS.map((tab) => {
+            const active = gameType === tab.id;
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                role="tab"
+                aria-selected={active}
+                onClick={() => handleSwitchGame(tab.id)}
+                className={`min-h-[44px] px-1.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70 ${
+                  active ? 'bg-white text-black' : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <Icon className="w-4 h-4 shrink-0 hidden xs:block" />
+                <span className="truncate">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ===== Tic-Tac-Toe ===== */}
+        {gameType === 'tictactoe' && (
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-full grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
+              <div className={`min-w-0 px-3 py-2 rounded-xl border ${isMyTurn ? 'border-cyan-400/70' : 'border-white/10'}`}>
+                <p className="font-semibold text-white truncate">You · <span className="text-cyan-300">{mySymbol}</span></p>
+                <p className="text-xs text-neutral-400">{myScore} {myScore === 1 ? 'win' : 'wins'}</p>
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                  <span>In-Call Games</span>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                </h3>
-                <p className="text-[10px] text-gray-400">Live with {peerName}</p>
+              <span className="text-xs font-bold text-neutral-500">VS</span>
+              <div className={`min-w-0 px-3 py-2 rounded-xl border text-right ${!isMyTurn && status === 'in_progress' ? 'border-rose-400/70' : 'border-white/10'}`}>
+                <p className="font-semibold text-white truncate">{peerName} · <span className="text-rose-300">{peerSymbol}</span></p>
+                <p className="text-xs text-neutral-400">{peerScore} {peerScore === 1 ? 'win' : 'wins'}</p>
               </div>
             </div>
 
-            <button
-              onClick={() => {
-                sounds.playClick();
-                closeGame();
-              }}
-              className="p-2 rounded-xl bg-transparent hover:bg-white/10 text-gray-400 hover:text-white transition-all border border-white/10 active:scale-95"
-              title="Close game"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+            <p className="text-sm font-semibold text-center min-h-[1.25rem]" aria-live="polite">
+              {status === 'won' ? (
+                <span className="inline-flex items-center gap-1.5 text-emerald-300">
+                  <Trophy className="w-4 h-4 text-amber-400" />
+                  {iWon ? 'You won!' : `${peerName} won!`}
+                </span>
+              ) : status === 'draw' ? (
+                <span className="text-amber-300">It&rsquo;s a draw</span>
+              ) : isMyTurn ? (
+                <span className="text-cyan-300">Your turn, place {mySymbol}</span>
+              ) : (
+                <span className="text-neutral-400">Waiting for {peerName}&hellip;</span>
+              )}
+            </p>
 
-          {/* Game Switcher Tabs - Unfilled Clean Outline Style */}
-          <div className="grid grid-cols-3 gap-1.5 p-1 bg-transparent border border-white/15 rounded-2xl">
-            {[
-              { id: 'tictactoe' as GameType, label: 'Tic-Tac-Toe', icon: Gamepad2 },
-              { id: 'dark_questions' as GameType, label: 'Dark Truths', icon: Flame },
-              { id: 'would_you_rather' as GameType, label: 'Would You', icon: Sparkles },
-            ].map((tab) => {
-              const isActive = gameType === tab.id;
-              const TabIcon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => handleSwitchGame(tab.id)}
-                  className={`py-2 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                    isActive
-                      ? 'bg-transparent border border-white/40 text-white font-bold shadow-sm'
-                      : 'bg-transparent border border-transparent text-gray-400 hover:text-white hover:border-white/15'
-                  }`}
-                >
-                  <TabIcon className="w-3.5 h-3.5" />
-                  <span className="truncate">{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* ======================================================== */}
-          {/* GAME 1: TIC-TAC-TOE WITH TURN-BY-TURN & SYMBOL LOCK      */}
-          {/* ======================================================== */}
-          {gameType === 'tictactoe' && (
-            <div className="flex flex-col items-center py-2 space-y-4">
-              {/* Player Badges & Signs */}
-              <div className="w-full flex items-center justify-between gap-2 px-1">
-                {/* User Player Pill */}
-                <div
-                  className={`flex-1 p-2.5 rounded-2xl border flex items-center gap-2 transition-all ${
-                    isMyTurn && status === 'in_progress'
-                      ? 'bg-transparent border-cyan-400/60 shadow-md'
-                      : 'bg-transparent border-white/10 opacity-70'
-                  }`}
-                >
-                  <div className="w-7 h-7 rounded-xl flex items-center justify-center font-black text-sm border border-cyan-400/40 text-cyan-300 bg-transparent">
-                    {mySymbol}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-white truncate">You ({mySymbol})</p>
-                    <p className="text-[10px] text-gray-400 flex items-center gap-1">
-                      {isMyTurn && status === 'in_progress' ? (
-                        <>
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-                          <span>Your Turn</span>
-                        </>
-                      ) : (
-                        <span>Waiting</span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="text-xs font-bold text-gray-500">VS</div>
-
-                {/* Peer Player Pill */}
-                <div
-                  className={`flex-1 p-2.5 rounded-2xl border flex items-center gap-2 transition-all ${
-                    !isMyTurn && status === 'in_progress'
-                      ? 'bg-transparent border-rose-400/60 shadow-md'
-                      : 'bg-transparent border-white/10 opacity-70'
-                  }`}
-                >
-                  <div className="w-7 h-7 rounded-xl flex items-center justify-center font-black text-sm border border-rose-400/40 text-rose-300 bg-transparent">
-                    {peerSymbol}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-white truncate">{peerName} ({peerSymbol})</p>
-                    <p className="text-[10px] text-gray-400 flex items-center gap-1">
-                      {!isMyTurn && status === 'in_progress' ? (
-                        <>
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
-                          <span>Thinking...</span>
-                        </>
-                      ) : (
-                        <span>Ready</span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Status / Turn Banner */}
-              <div className="w-full text-center">
-                {status === 'won' ? (
-                  <motion.div
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="py-2 px-4 rounded-2xl bg-transparent border border-emerald-400 text-emerald-300 font-bold text-sm flex items-center justify-center gap-2"
+            <div className="grid grid-cols-3 gap-2 w-full max-w-[17rem] aspect-square" role="grid" aria-label="Tic-Tac-Toe board">
+              {board.map((cell, idx) => {
+                const isWin = line?.includes(idx);
+                const canClick = isMyTurn && cell === '';
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => handleMove(idx)}
+                    disabled={!canClick}
+                    aria-label={`Row ${Math.floor(idx / 3) + 1}, column ${(idx % 3) + 1}: ${cell || 'empty'}`}
+                    className={`rounded-2xl text-3xl sm:text-4xl font-black flex items-center justify-center border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70 ${
+                      isWin
+                        ? 'border-emerald-400 text-emerald-300 bg-emerald-400/10'
+                        : cell === 'X'
+                        ? 'border-cyan-400/40 text-cyan-300'
+                        : cell === 'O'
+                        ? 'border-rose-400/40 text-rose-300'
+                        : canClick
+                        ? 'border-white/20 hover:bg-white/5 hover:border-white/40'
+                        : 'border-white/10 cursor-not-allowed'
+                    }`}
                   >
-                    <Trophy className="w-4 h-4 text-amber-400" />
-                    <span>{getWinnerText()}</span>
-                  </motion.div>
-                ) : status === 'draw' ? (
-                  <div className="py-2 px-4 rounded-2xl bg-transparent border border-amber-400/60 text-amber-300 font-bold text-xs">
-                    Game ended in a Draw!
-                  </div>
-                ) : isMyTurn ? (
-                  <div className="py-2 px-4 rounded-2xl bg-transparent border border-cyan-400/60 text-cyan-300 font-bold text-xs flex items-center justify-center gap-1.5 animate-pulse">
-                    <span>Your Turn! Place</span>
-                    <span className="px-2 py-0.5 rounded-lg border border-cyan-400 text-cyan-200 font-mono font-black">
-                      {mySymbol}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="py-2 px-4 rounded-2xl bg-transparent border border-white/15 text-gray-400 font-medium text-xs flex items-center justify-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                    <span>Waiting for {peerName} ({peerSymbol})...</span>
-                  </div>
-                )}
+                    {cell}
+                  </button>
+                );
+              })}
+            </div>
+
+            {(status === 'won' || status === 'draw') && (
+              <button onClick={handleReset} className={btnPrimary}>
+                <RefreshCw className="w-4 h-4" />
+                Play again
+              </button>
+            )}
+            {(status === 'won' || status === 'draw') && (
+              <p className="text-xs text-neutral-500 -mt-2">You swap X and O each round.</p>
+            )}
+          </div>
+        )}
+
+        {/* ===== Questions ===== */}
+        {gameType === 'dark_questions' && (
+          <div className="flex flex-col gap-4">
+            <motion.div
+              key={activeQuestion?.question}
+              {...pop}
+              transition={{ duration: 0.2 }}
+              className="rounded-2xl border border-white/15 p-4 sm:p-5 flex flex-col gap-3"
+            >
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="px-2.5 py-1 rounded-full border border-white/20 text-neutral-200 font-semibold">
+                  {activeQuestion?.category || 'Deep Talk'}
+                </span>
+                {activeQuestion?.tag && <span className="text-neutral-500 truncate">{activeQuestion.tag}</span>}
               </div>
+              <p className="text-base sm:text-lg font-semibold text-white leading-snug text-balance" aria-live="polite">
+                {activeQuestion?.question}
+              </p>
+              <p className="text-xs text-neutral-500">Take turns answering out loud. Skip anything you&rsquo;d rather not answer.</p>
+            </motion.div>
 
-              {/* 3x3 Tic-Tac-Toe Board */}
-              <div className="grid grid-cols-3 gap-3 w-64 h-64 sm:w-72 sm:h-72 p-3 rounded-3xl bg-transparent border border-white/15 shadow-xl relative">
-                {board.map((cell, idx) => {
-                  const isWinningCell = winningLine?.includes(idx);
-                  const isCellEmpty = cell === '';
-                  const canClick = isMyTurn && isCellEmpty && status === 'in_progress';
-
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-xs text-neutral-400">React</p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {REACTION_EMOJIS.map((emoji) => {
+                  const selected = customData?.reactions?.[me] === emoji;
                   return (
                     <button
-                      key={idx}
-                      onClick={() => handleTicTacToeMove(idx)}
-                      disabled={!canClick}
-                      className={`relative rounded-2xl text-3xl font-black flex items-center justify-center transition-all bg-transparent ${
-                        isWinningCell
-                          ? 'border-2 border-emerald-400 text-emerald-300 scale-95'
-                          : cell === 'X'
-                          ? 'border border-cyan-400/50 text-cyan-300'
-                          : cell === 'O'
-                          ? 'border border-rose-400/50 text-rose-300'
-                          : canClick
-                          ? 'border border-white/15 hover:border-cyan-400 hover:bg-white/5 cursor-pointer active:scale-95 group'
-                          : 'border border-white/5 cursor-not-allowed opacity-40'
+                      key={emoji}
+                      onClick={() => handleReact(emoji)}
+                      aria-pressed={selected}
+                      aria-label={`React ${emoji}`}
+                      className={`w-11 h-11 rounded-xl text-xl flex items-center justify-center border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70 ${
+                        selected ? 'border-white bg-white/10' : 'border-white/15 hover:bg-white/5'
                       }`}
                     >
-                      {cell ? (
-                        <motion.span
-                          initial={{ scale: 0, rotate: -20 }}
-                          animate={{ scale: 1, rotate: 0 }}
-                          transition={{ type: 'spring', damping: 15 }}
-                        >
-                          {cell}
-                        </motion.span>
-                      ) : canClick ? (
-                        <span className="opacity-0 group-hover:opacity-40 text-cyan-300 text-xl font-black">
-                          {mySymbol}
-                        </span>
-                      ) : null}
+                      {emoji}
                     </button>
                   );
                 })}
               </div>
-
-              {/* Play Again / Reset Button - Clean Outline Style */}
-              {(status === 'won' || status === 'draw') && (
-                <motion.button
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  onClick={handleResetTicTacToe}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-transparent hover:bg-white/10 border border-white/30 hover:border-white/60 text-white text-xs font-bold transition-all active:scale-95"
-                >
-                  <RefreshCw className="w-4 h-4 animate-spin-once" />
-                  <span>Play Again</span>
-                </motion.button>
+              {Object.keys(customData?.reactions || {}).length > 0 && (
+                <div className="flex flex-wrap justify-center gap-2 text-xs text-neutral-300">
+                  {Object.entries(customData.reactions as Record<string, string>).map(([uid, r]) => (
+                    <span key={uid} className="px-2.5 py-1 rounded-lg border border-white/10">
+                      {uid === me ? 'You' : peerName} {r}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
-          )}
 
-          {/* ======================================================== */}
-          {/* GAME 2: DARK & SEXY FANTASY QUESTIONS                    */}
-          {/* ======================================================== */}
-          {gameType === 'dark_questions' && (
-            <div className="flex flex-col items-center py-2 space-y-4">
-              {/* Question Card */}
-              <motion.div
-                key={activeDarkQuestion?.question}
-                initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                transition={{ duration: 0.25 }}
-                className="w-full p-5 sm:p-6 rounded-3xl bg-transparent border border-white/15 shadow-xl relative flex flex-col space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-transparent border border-rose-400/40 text-rose-300 flex items-center gap-1.5">
-                    <Flame className="w-3 h-3 text-rose-400 animate-pulse" />
-                    <span>{activeDarkQuestion?.category || 'Dark Truth'}</span>
-                  </span>
-                  <span className="text-[10px] text-gray-400 font-mono">
-                    {activeDarkQuestion?.tag || 'Unfiltered'}
-                  </span>
-                </div>
-
-                <p className="text-sm sm:text-base font-bold text-white leading-relaxed text-center py-3">
-                  "{activeDarkQuestion?.question}"
-                </p>
-
-                {/* Reaction Emojis Grid - Unfilled Clean Outline Style */}
-                <div className="pt-2 border-t border-white/10 flex flex-col items-center space-y-2">
-                  <p className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold flex items-center gap-1">
-                    <SmilePlus className="w-3 h-3 text-rose-400" />
-                    <span>React to this question</span>
-                  </p>
-                  <div className="flex items-center justify-center gap-2">
-                    {REACTION_EMOJIS.map((emoji) => {
-                      const myReaction = customData?.reactions?.[currentUserId || 'me'];
-                      const isReacted = myReaction === emoji;
-                      return (
-                        <button
-                          key={emoji}
-                          onClick={() => handleReactDarkQuestion(emoji)}
-                          className={`w-9 h-9 rounded-2xl text-lg flex items-center justify-center border transition-all ${
-                            isReacted
-                              ? 'bg-transparent border-rose-400 scale-110 shadow-sm'
-                              : 'bg-transparent border-white/15 hover:border-white/40 hover:scale-105 active:scale-95'
-                          }`}
-                        >
-                          {emoji}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Peer reaction display if any */}
-                  {Object.keys(customData?.reactions || {}).length > 0 && (
-                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                      {Object.entries(customData.reactions).map(([uid, r]) => (
-                        <span
-                          key={uid}
-                          className="px-2.5 py-1 rounded-xl bg-transparent border border-white/15 text-xs text-gray-300 flex items-center gap-1"
-                        >
-                          <span>{uid === currentUserId ? 'You' : peerName}:</span>
-                          <span className="text-base">{r as string}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-
-              {/* Action Buttons: Next Question & Spark with AI */}
-              <div className="flex items-center justify-center gap-3 pt-1">
-                <button
-                  onClick={handleNextDarkQuestion}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-transparent hover:bg-white/10 border border-white/30 hover:border-white/60 text-white text-xs font-bold transition-all active:scale-95"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Next Question</span>
-                </button>
-
-                <button
-                  onClick={handleSparkAIDarkQuestion}
-                  disabled={isGeneratingAI}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-transparent hover:bg-rose-500/20 border border-rose-400 text-rose-300 hover:text-rose-200 text-xs font-bold transition-all shadow-[0_0_15px_rgba(244,63,94,0.2)] active:scale-95 disabled:opacity-50"
-                >
-                  <Sparkles className={`w-3.5 h-3.5 text-rose-400 ${isGeneratingAI ? 'animate-spin' : ''}`} />
-                  <span>{isGeneratingAI ? 'Generating...' : 'Spark with AI'}</span>
-                </button>
-              </div>
+            <div className="flex flex-wrap justify-center gap-2">
+              <button onClick={handleNextQuestion} className={btnPrimary}>
+                <RefreshCw className="w-4 h-4" />
+                Next question
+              </button>
+              <button onClick={handleAIQuestion} disabled={isGeneratingAI} className={btnSecondary}>
+                <Sparkles className={`w-4 h-4 ${isGeneratingAI ? 'motion-safe:animate-spin' : ''}`} />
+                {isGeneratingAI ? 'Thinking…' : 'Surprise me'}
+              </button>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* ======================================================== */}
-          {/* GAME 3: WOULD YOU RATHER                                 */}
-          {/* ======================================================== */}
-          {gameType === 'would_you_rather' && (
-            <div className="flex flex-col items-center py-2 space-y-4">
-              <p className="text-xs uppercase tracking-widest text-gray-300 font-bold flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                <span>Pick Your Choice</span>
-              </p>
-
-              <div className="w-full flex flex-col gap-3">
-                {['optionA', 'optionB'].map((optKey) => {
-                  const optText = (activeCard as any)?.[optKey] || 'Option';
-                  const myVote = customData?.votes?.[currentUserId || 'me'];
-                  const isSelected = myVote === optKey;
-
-                  return (
+        {/* ===== Would You Rather ===== */}
+        {gameType === 'would_you_rather' && (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm font-semibold text-white text-center">Would you rather&hellip;</p>
+            <div className="flex flex-col gap-2">
+              {(['optionA', 'optionB'] as const).map((opt, i) => {
+                const mine = myVote === opt;
+                const theirs = revealed && peerVote === opt;
+                return (
+                  <React.Fragment key={opt}>
+                    {i === 1 && <p className="text-center text-xs font-bold text-neutral-500">OR</p>}
                     <button
-                      key={optKey}
-                      onClick={() => handleWYRVote(optKey)}
-                      className={`w-full p-4 rounded-2xl text-left text-xs sm:text-sm font-semibold transition-all border ${
-                        isSelected
-                          ? 'bg-transparent border-cyan-400 text-white shadow-sm scale-[1.01]'
-                          : 'bg-transparent hover:bg-white/5 border-white/15 text-gray-200 active:scale-98'
+                      onClick={() => handleVote(opt)}
+                      disabled={status === 'completed'}
+                      aria-pressed={mine}
+                      className={`w-full min-h-[56px] p-4 rounded-2xl text-left text-sm sm:text-base font-semibold border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70 disabled:cursor-default ${
+                        mine ? 'border-cyan-400 bg-cyan-400/10 text-white' : 'border-white/15 text-neutral-200 hover:bg-white/5'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span>{optText}</span>
-                        {isSelected && <CheckCircle2 className="w-5 h-5 text-cyan-400 shrink-0" />}
-                      </div>
+                      <span className="flex items-start justify-between gap-3">
+                        <span>{(activeCard as any)?.[opt]}</span>
+                        <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold">
+                          {mine && (
+                            <span className="inline-flex items-center gap-1 text-cyan-300">
+                              <CheckCircle2 className="w-4 h-4" /> You
+                            </span>
+                          )}
+                          {theirs && <span className="text-rose-300">{peerName}</span>}
+                        </span>
+                      </span>
                     </button>
-                  );
-                })}
-              </div>
-
-              <div className="pt-2 text-center w-full space-y-3">
-                {status === 'completed' && (
-                  <p className="text-xs text-emerald-400 font-medium">
-                    Choice registered! Compare answers with {peerName}.
-                  </p>
-                )}
-                <div className="flex items-center justify-center gap-3">
-                  <button
-                    onClick={handleNextWYR}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-transparent hover:bg-white/10 border border-white/30 hover:border-white/60 text-white text-xs font-bold transition-all active:scale-95"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Next Dilemma</span>
-                  </button>
-
-                  <button
-                    onClick={handleSparkAIWYR}
-                    disabled={isGeneratingAI}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-transparent hover:bg-cyan-500/20 border border-cyan-400 text-cyan-300 hover:text-cyan-200 text-xs font-bold transition-all shadow-[0_0_15px_rgba(6,182,212,0.2)] active:scale-95 disabled:opacity-50"
-                  >
-                    <Sparkles className={`w-3.5 h-3.5 text-cyan-400 ${isGeneratingAI ? 'animate-spin' : ''}`} />
-                    <span>{isGeneratingAI ? 'Generating...' : 'Spark with AI'}</span>
-                  </button>
-                </div>
-              </div>
+                  </React.Fragment>
+                );
+              })}
             </div>
-          )}
-        </motion.div>
-      </div>
-    </AnimatePresence>
+
+            <p className="text-sm text-center min-h-[1.25rem]" aria-live="polite">
+              {revealed ? (
+                myVote === peerVote ? (
+                  <span className="text-emerald-300 font-semibold">Same pick! You two think alike.</span>
+                ) : (
+                  <span className="text-amber-300 font-semibold">Different picks. Time to explain yourselves!</span>
+                )
+              ) : myVote ? (
+                <span className="text-neutral-400">Waiting for {peerName} to choose&hellip;</span>
+              ) : peerVote ? (
+                <span className="text-neutral-400">{peerName} has chosen. Your turn!</span>
+              ) : (
+                <span className="text-neutral-500">Both pick, then the answers are revealed.</span>
+              )}
+            </p>
+
+            <div className="flex flex-wrap justify-center gap-2">
+              <button onClick={handleNextCard} className={btnPrimary}>
+                <RefreshCw className="w-4 h-4" />
+                Next dilemma
+              </button>
+              <button onClick={handleAICard} disabled={isGeneratingAI} className={btnSecondary}>
+                <Sparkles className={`w-4 h-4 ${isGeneratingAI ? 'motion-safe:animate-spin' : ''}`} />
+                {isGeneratingAI ? 'Thinking…' : 'Surprise me'}
+              </button>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </div>
   );
 }

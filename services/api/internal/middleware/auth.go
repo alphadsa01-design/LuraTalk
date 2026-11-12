@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -95,7 +96,8 @@ func AdminAuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 				}
 			}
 
-			if adminKey == "" || adminKey != cfg.AdminAPIKey {
+			if adminKey == "" || cfg.AdminAPIKey == "" ||
+				subtle.ConstantTimeCompare([]byte(adminKey), []byte(cfg.AdminAPIKey)) != 1 {
 				http.Error(w, "Unauthorized: invalid or missing admin credentials", http.StatusUnauthorized)
 				return
 			}

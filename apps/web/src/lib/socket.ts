@@ -35,9 +35,16 @@ class AuraSocketClient {
       return;
     }
 
+    // Always remember the latest token: reconnect, visibility and online handlers rely on it
+    this.token = token;
+
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-      this.token = token;
       return;
+    }
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
 
     let wsUrl = process.env.NEXT_PUBLIC_WS_URL;
@@ -64,9 +71,11 @@ class AuraSocketClient {
     const authenticatedWsUrl = `${wsUrl}${separator}token=${encodeURIComponent(token)}`;
 
     try {
-      this.ws = new WebSocket(authenticatedWsUrl);
+      const socket = new WebSocket(authenticatedWsUrl);
+      this.ws = socket;
 
       this.ws.onopen = () => {
+        if (this.ws !== socket) return;
         this.isConnecting = false;
         this.reconnectAttempts = 0;
         this.emitInternal('open', {});
@@ -100,6 +109,9 @@ class AuraSocketClient {
       };
 
       this.ws.onclose = () => {
+        // Ignore close events from sockets that were replaced or intentionally disconnected
+        if (this.ws !== socket) return;
+        this.ws = null;
         this.isConnecting = false;
         this.emitInternal('close', {});
         this.scheduleReconnect();
@@ -116,6 +128,7 @@ class AuraSocketClient {
   }
 
   private scheduleReconnect() {
+    if (!this.token) return;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 15000) + Math.random() * 500;
     this.reconnectAttempts++;
@@ -197,16 +210,16 @@ class AuraSocketClient {
     this.send('direct:call_accept', { callId, callerId, roomName });
   }
 
-  public rejectDirectCall(callerId: string) {
-    this.send('direct:call_reject', { callerId });
+  public rejectDirectCall(callerId: string, callId?: string) {
+    this.send('direct:call_reject', { callId, callerId });
   }
 
-  public blockDirectCall(callerId: string) {
-    this.send('direct:call_block', { callerId });
+  public blockDirectCall(callerId: string, callId?: string) {
+    this.send('direct:call_block', { callId, callerId });
   }
 
-  public cancelDirectCall(targetUserId: string) {
-    this.send('direct:call_cancel', { targetUserId });
+  public cancelDirectCall(targetUserId: string, callId?: string) {
+    this.send('direct:call_cancel', { callId, targetUserId });
   }
 
   public reportUser(reportedUserId: string, reason: string, description: string) {
@@ -214,10 +227,16 @@ class AuraSocketClient {
   }
 
   public disconnect() {
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    // Intentional disconnect: forget the token so onclose does not auto-reconnect
+    this.token = null;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.ws) {
-      this.ws.close();
+      const socket = this.ws;
       this.ws = null;
+      socket.close();
     }
     this.messageBuffer = [];
   }

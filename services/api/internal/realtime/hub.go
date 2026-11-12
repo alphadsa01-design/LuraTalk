@@ -19,6 +19,7 @@ import (
 	"airtak/services/api/internal/models"
 	"airtak/services/api/internal/moderation"
 	"airtak/services/api/internal/telemetry"
+	"airtak/services/api/internal/topics"
 	"airtak/services/api/internal/trust"
 
 	"github.com/google/uuid"
@@ -38,6 +39,8 @@ type Hub struct {
 	Clients         map[string]*Client            // userID -> *Client
 	Rooms           map[string]map[string]*Client  // roomName -> userID -> *Client
 	PendingInvites  map[string]*DirectCallInvite  // callID -> *DirectCallInvite
+	RematchPairs    map[string]time.Time          // pairKey -> matchedAt ("Talk again?" eligibility)
+	RematchVotes    map[string]map[string]bool    // pairKey -> userID -> liked
 	Register        chan *Client
 	Unregister      chan *Client
 	Broadcast       chan []byte
@@ -64,6 +67,8 @@ func NewHub(
 		Clients:         make(map[string]*Client),
 		Rooms:           make(map[string]map[string]*Client),
 		PendingInvites:  make(map[string]*DirectCallInvite),
+		RematchPairs:    make(map[string]time.Time),
+		RematchVotes:    make(map[string]map[string]bool),
 		Register:        make(chan *Client),
 		Unregister:      make(chan *Client),
 		Broadcast:       make(chan []byte),
@@ -99,26 +104,35 @@ func (h *Hub) Run() {
 
 		case client := <-h.Unregister:
 			h.mu.Lock()
-			// Only remove from map if it is this exact client instance
-			if curr, ok := h.Clients[client.UserID]; ok && curr == client {
+			// Only remove from map if it is this exact client instance. If a newer
+			// connection for the same user already replaced this one (e.g. page refresh),
+			// the user-level state (queue ticket, pending invites) belongs to the new
+			// connection and must not be torn down.
+			curr, ok := h.Clients[client.UserID]
+			replaced := ok && curr != client
+			if ok && curr == client {
 				delete(h.Clients, client.UserID)
 			}
 			client.CloseSend()
-			// Remove from matchmaking queue
-			h.MatchEngine.LeaveQueue(client.UserID)
 
-			// Clean up any pending invites involving this client
-			for cid, inv := range h.PendingInvites {
-				if inv.CallerID == client.UserID || inv.CalleeID == client.UserID {
-					delete(h.PendingInvites, cid)
+			if !replaced {
+				// Remove from matchmaking queue
+				h.MatchEngine.LeaveQueue(client.UserID)
+
+				// Clean up any pending invites involving this client
+				for cid, inv := range h.PendingInvites {
+					if inv.CallerID == client.UserID || inv.CalleeID == client.UserID {
+						delete(h.PendingInvites, cid)
+					}
 				}
 			}
-			h.mu.Unlock()
 
 			// Auto-notify active room peers
-			if client.ActiveRoom != "" {
-				h.mu.Lock()
-				if room, ok := h.Rooms[client.ActiveRoom]; ok {
+			activeRoom := client.ActiveRoom
+			roomLeft := false
+			if activeRoom != "" {
+				if room, ok := h.Rooms[activeRoom]; ok && room[client.UserID] == client {
+					roomLeft = true
 					delete(room, client.UserID)
 					for _, peer := range room {
 						peer.SendJSON("match:peer_left", map[string]string{
@@ -131,11 +145,16 @@ func (h *Hub) Run() {
 						})
 					}
 					if len(room) == 0 {
-						delete(h.Rooms, client.ActiveRoom)
+						h.deleteRoomLocked(activeRoom)
 					}
 				}
-				h.mu.Unlock()
-				h.finalizeConversation(client.ActiveRoom)
+				client.ActiveRoom = ""
+			}
+			h.mu.Unlock()
+
+			if roomLeft {
+				// DB work must not block the hub event loop
+				go h.finalizeConversation(activeRoom)
 			}
 
 		case message := <-h.Broadcast:
@@ -257,6 +276,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		Send:         make(chan []byte, 256),
 		UserID:       claims.UserID,
 		Username:     claims.Username,
+		AvatarID:     user.AvatarID,
 		MysteryLevel: 1,
 	}
 
@@ -297,7 +317,7 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 				})
 			}
 			if len(prevRoom) == 0 {
-				delete(h.Rooms, clientA.ActiveRoom)
+				h.deleteRoomLocked(clientA.ActiveRoom)
 			}
 		}
 	}
@@ -313,13 +333,15 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 				})
 			}
 			if len(prevRoom) == 0 {
-				delete(h.Rooms, clientB.ActiveRoom)
+				h.deleteRoomLocked(clientB.ActiveRoom)
 			}
 		}
 	}
 
 	clientA.ActiveRoom = pair.RoomName
 	clientB.ActiveRoom = pair.RoomName
+	h.pruneRematchesLocked(time.Now())
+	h.recordRematchPairLocked(clientA.UserID, clientB.UserID, time.Now())
 	clientA.MysteryLevel = 1
 	clientB.MysteryLevel = 1
 
@@ -411,6 +433,14 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 		pair.TicketB.Preferences.Intention, pair.TicketB.Preferences.Mood,
 	)
 
+	// Both opted into the same topic of the day: tell them what they're here to talk about
+	var sharedTopic interface{}
+	if t := pair.TicketA.Preferences.Topic; t != "" && t == pair.TicketB.Preferences.Topic {
+		if topic, ok := topics.ByID(t); ok {
+			sharedTopic = topic
+		}
+	}
+
 	// Notify Client A
 	clientA.SendJSON("match:found", map[string]interface{}{
 		"matchId":      pair.MatchID,
@@ -430,6 +460,7 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 			"mysteryLevel":    1,
 		},
 		"icebreakerSuggestion": icebreakerA,
+		"topic":                sharedTopic,
 	})
 
 	// Notify Client B
@@ -451,6 +482,7 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 			"mysteryLevel":    1,
 		},
 		"icebreakerSuggestion": icebreakerB,
+		"topic":                sharedTopic,
 	})
 }
 
@@ -466,53 +498,8 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 		}
 
 		// Ensure client is completely evicted from any active room before queueing
-		h.mu.Lock()
-		if prevRoom := client.ActiveRoom; prevRoom != "" {
-			if roomClients, exists := h.Rooms[prevRoom]; exists {
-				delete(roomClients, client.UserID)
-				for _, peer := range roomClients {
-					peer.SendJSON("match:peer_left", map[string]string{
-						"userId": client.UserID,
-						"reason": "requeued",
-					})
-				}
-				if len(roomClients) == 0 {
-					delete(h.Rooms, prevRoom)
-				}
-			}
-			client.ActiveRoom = ""
-		}
-		h.mu.Unlock()
-
-		var ticket matchmaking.MatchTicket
-		if err := json.Unmarshal(msg.Payload, &ticket); err == nil {
-			ticket.UserID = client.UserID
-			ticket.Username = client.Username
-			ticket.AvatarID = client.AvatarID
-
-			// Overwrite TrustScore and CountryCode directly from database user
-			uUUID, err := uuid.Parse(client.UserID)
-			if err == nil {
-				if dbUser, err := auth.GetUserByID(uUUID); err == nil && dbUser != nil {
-					ticket.TrustScore = dbUser.TrustScore
-					ticket.CountryCode = dbUser.CountryCode
-					if dbUser.AvatarID != "" {
-						ticket.AvatarID = dbUser.AvatarID
-					}
-				}
-			}
-			if ticket.TrustScore == 0 {
-				ticket.TrustScore = 100
-			}
-
-			h.MatchEngine.JoinQueue(&ticket)
-			telemetry.Monitor.RecordEvent(telemetry.EventMatchQueue)
-			client.SendJSON("queue:status", map[string]interface{}{
-				"status":  "queued",
-				"mode":    ticket.Mode,
-				"message": "Finding someone worth talking to...",
-			})
-		}
+		h.leaveActiveRoom(client, "requeued")
+		h.enqueueClient(client, msg.Payload)
 
 	case "queue:leave":
 		h.MatchEngine.LeaveQueue(client.UserID)
@@ -521,25 +508,7 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 		})
 
 	case "call:end":
-		h.mu.Lock()
-		activeRoom := client.ActiveRoom
-		if activeRoom != "" {
-			if roomClients, exists := h.Rooms[activeRoom]; exists {
-				delete(roomClients, client.UserID)
-				for _, peer := range roomClients {
-					peer.SendJSON("match:peer_left", map[string]string{
-						"userId": client.UserID,
-						"reason": "hung_up",
-					})
-				}
-				if len(roomClients) == 0 {
-					delete(h.Rooms, activeRoom)
-				}
-			}
-			client.ActiveRoom = ""
-		}
-		h.mu.Unlock()
-		h.finalizeConversation(activeRoom)
+		h.leaveActiveRoom(client, "hung_up")
 
 	case "direct:call":
 		var payload struct {
@@ -568,7 +537,8 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 		}
 
 		h.mu.RLock()
-		targetClient, exists := h.Clients[payload.TargetUserID]
+		targetClient, exists := h.Clients[targetUUID.String()]
+		targetBusy := exists && targetClient != nil && targetClient.ActiveRoom != ""
 		h.mu.RUnlock()
 
 		if !exists || targetClient == nil {
@@ -579,7 +549,7 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			return
 		}
 
-		if targetClient.ActiveRoom != "" {
+		if targetBusy {
 			client.SendJSON("direct:call_failed", map[string]string{
 				"reason":  "busy",
 				"message": "User is currently in another conversation.",
@@ -655,6 +625,7 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 
 		h.mu.RLock()
 		callerClient, callerExists := h.Clients[invite.CallerID]
+		callerBusy := callerExists && callerClient != nil && callerClient.ActiveRoom != ""
 		h.mu.RUnlock()
 
 		if !callerExists || callerClient == nil {
@@ -665,8 +636,21 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			return
 		}
 
+		if callerBusy {
+			client.SendJSON("direct:call_failed", map[string]string{
+				"reason":  "busy",
+				"message": "The caller is already in another conversation.",
+			})
+			return
+		}
+
 		// Strictly use server-derived roomName from validated invite
 		secureRoomName := invite.RoomName
+
+		// Neither side may stay in the random-match queue or a previous room
+		h.MatchEngine.LeaveQueue(client.UserID)
+		h.MatchEngine.LeaveQueue(callerClient.UserID)
+		h.leaveActiveRoom(client, "joined_direct_call")
 
 		h.mu.Lock()
 		client.ActiveRoom = secureRoomName
@@ -737,14 +721,13 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			CallerID string `json:"callerId"`
 		}
 		if err := json.Unmarshal(msg.Payload, &payload); err == nil {
-			if payload.CallID != "" {
-				h.mu.Lock()
-				delete(h.PendingInvites, payload.CallID)
-				h.mu.Unlock()
-			}
-			if payload.CallerID != "" {
+			// Only the callee of a pending invite may reject it
+			invite := h.takeInvite(payload.CallID, func(inv *DirectCallInvite) bool {
+				return inv.CalleeID == client.UserID && (payload.CallID != "" || inv.CallerID == payload.CallerID)
+			})
+			if invite != nil {
 				h.mu.RLock()
-				callerClient, exists := h.Clients[payload.CallerID]
+				callerClient, exists := h.Clients[invite.CallerID]
 				h.mu.RUnlock()
 				if exists && callerClient != nil {
 					callerClient.SendJSON("direct:call_rejected", map[string]string{
@@ -755,23 +738,57 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			}
 		}
 
+	case "direct:call_block":
+		var payload struct {
+			CallID   string `json:"callId"`
+			CallerID string `json:"callerId"`
+		}
+		if err := json.Unmarshal(msg.Payload, &payload); err == nil {
+			invite := h.takeInvite(payload.CallID, func(inv *DirectCallInvite) bool {
+				return inv.CalleeID == client.UserID && (payload.CallID != "" || inv.CallerID == payload.CallerID)
+			})
+			if invite == nil {
+				return
+			}
+			blockerUUID, err1 := uuid.Parse(client.UserID)
+			blockedUUID, err2 := uuid.Parse(invite.CallerID)
+			if err1 != nil || err2 != nil {
+				return
+			}
+			h.MatchEngine.AddBlock(blockerUUID.String(), blockedUUID.String())
+			h.ModService.BlockUser(blockerUUID, blockedUUID)
+
+			h.mu.RLock()
+			callerClient, exists := h.Clients[invite.CallerID]
+			h.mu.RUnlock()
+			if exists && callerClient != nil {
+				callerClient.SendJSON("direct:call_rejected", map[string]string{
+					"reason":  "declined",
+					"message": "Call was declined.",
+				})
+			}
+			client.SendJSON("safety:alert", map[string]string{
+				"message": "User blocked successfully. They can no longer call you.",
+			})
+		}
+
 	case "direct:call_cancel":
 		var payload struct {
 			CallID       string `json:"callId"`
 			TargetUserID string `json:"targetUserId"`
 		}
 		if err := json.Unmarshal(msg.Payload, &payload); err == nil {
-			if payload.CallID != "" {
-				h.mu.Lock()
-				delete(h.PendingInvites, payload.CallID)
-				h.mu.Unlock()
-			}
-			if payload.TargetUserID != "" {
+			// Only the caller of a pending invite may cancel it
+			invite := h.takeInvite(payload.CallID, func(inv *DirectCallInvite) bool {
+				return inv.CallerID == client.UserID && (payload.CallID != "" || inv.CalleeID == payload.TargetUserID)
+			})
+			if invite != nil {
 				h.mu.RLock()
-				targetClient, exists := h.Clients[payload.TargetUserID]
+				targetClient, exists := h.Clients[invite.CalleeID]
 				h.mu.RUnlock()
 				if exists && targetClient != nil {
 					targetClient.SendJSON("direct:call_cancelled", map[string]string{
+						"callId":   invite.CallID,
 						"callerId": client.UserID,
 					})
 				}
@@ -780,38 +797,18 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 
 	case "match:next":
 		// Disconnect from current room and jump straight to matchmaking
-		h.mu.Lock()
-		prevRoom := client.ActiveRoom
-		if prevRoom != "" {
-			if roomClients, exists := h.Rooms[prevRoom]; exists {
-				delete(roomClients, client.UserID)
-				for _, peer := range roomClients {
-					peer.SendJSON("match:peer_left", map[string]string{
-						"userId": client.UserID,
-						"reason": "skipped",
-					})
-				}
-			}
-			client.ActiveRoom = ""
-		}
-		h.mu.Unlock()
-		h.finalizeConversation(prevRoom)
-
-		var ticket matchmaking.MatchTicket
-		if err := json.Unmarshal(msg.Payload, &ticket); err == nil {
-			ticket.UserID = client.UserID
-			ticket.Username = client.Username
-			ticket.AvatarID = client.AvatarID
-			h.MatchEngine.JoinQueue(&ticket)
-			client.SendJSON("queue:status", map[string]interface{}{
-				"status":  "queued",
-				"mode":    ticket.Mode,
-				"message": "Finding someone worth talking to...",
+		h.leaveActiveRoom(client, "skipped")
+		if !h.TrustEngine.CheckRateLimit(client.UserID+":queue", 12, time.Minute) {
+			client.SendJSON("safety:alert", map[string]string{
+				"message": "You are joining queues too quickly. Please wait a moment.",
 			})
+			return
 		}
+		h.enqueueClient(client, msg.Payload)
 
 	case "chat:send":
-		if client.ActiveRoom == "" {
+		activeRoom := h.activeRoomOf(client)
+		if activeRoom == "" {
 			return
 		}
 		var payload struct {
@@ -831,8 +828,9 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 		if cleanContent == "" {
 			return
 		}
-		if len(cleanContent) > 1000 {
-			cleanContent = cleanContent[:1000]
+		if runes := []rune(cleanContent); len(runes) > 1000 {
+			// Truncate on rune boundaries so multi-byte characters are never split
+			cleanContent = string(runes[:1000])
 		}
 
 		// Rate limiting check
@@ -861,7 +859,7 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 
 		chatMsg := map[string]interface{}{
 			"id":                msgID,
-			"conversationId":    client.ActiveRoom,
+			"conversationId":    activeRoom,
 			"senderId":          client.UserID,
 			"senderName":        client.Username,
 			"content":           sanitizedContent,
@@ -870,36 +868,47 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			"timestamp":         time.Now().UnixMilli(),
 		}
 
-		h.broadcastToRoomExcept(client.ActiveRoom, client.UserID, "chat:message", chatMsg)
+		h.broadcastToRoomExcept(activeRoom, client.UserID, "chat:message", chatMsg)
+
+	case "rematch:vote":
+		h.handleRematchVote(client, msg.Payload)
 
 	case "chat:typing":
-		if client.ActiveRoom != "" {
-			h.broadcastToRoomExcept(client.ActiveRoom, client.UserID, "chat:typing", map[string]interface{}{
+		if activeRoom := h.activeRoomOf(client); activeRoom != "" {
+			h.broadcastToRoomExcept(activeRoom, client.UserID, "chat:typing", map[string]interface{}{
 				"userId":   client.UserID,
 				"isTyping": true,
 			})
 		}
 
 	case "webrtc:signal":
-		if client.ActiveRoom != "" {
+		if activeRoom := h.activeRoomOf(client); activeRoom != "" {
 			var raw map[string]interface{}
-			if err := json.Unmarshal(msg.Payload, &raw); err == nil {
+			if err := json.Unmarshal(msg.Payload, &raw); err == nil && raw != nil {
 				raw["fromUserId"] = client.UserID
-				h.broadcastToRoomExcept(client.ActiveRoom, client.UserID, "webrtc:signal", raw)
+				h.broadcastToRoomExcept(activeRoom, client.UserID, "webrtc:signal", raw)
 			}
 		}
 
 	case "mystery:reveal_request":
-		if client.ActiveRoom != "" {
+		h.mu.Lock()
+		activeRoom := client.ActiveRoom
+		if activeRoom != "" && client.MysteryLevel < 3 {
+			// 1: anonymous, 2: shared interests, 3: full profile (max)
 			client.MysteryLevel++
-			h.broadcastToRoom(client.ActiveRoom, "mystery:update", map[string]interface{}{
+		}
+		level := client.MysteryLevel
+		h.mu.Unlock()
+		if activeRoom != "" {
+			h.broadcastToRoom(activeRoom, "mystery:update", map[string]interface{}{
 				"userId":       client.UserID,
-				"mysteryLevel": client.MysteryLevel,
+				"mysteryLevel": level,
 			})
 		}
 
 	case "game:action":
-		if client.ActiveRoom == "" {
+		activeRoom := h.activeRoomOf(client)
+		if activeRoom == "" {
 			return
 		}
 		var payload struct {
@@ -913,7 +922,7 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 
 		if payload.ActionType == "start" {
 			h.mu.RLock()
-			roomClients := h.Rooms[client.ActiveRoom]
+			roomClients := h.Rooms[activeRoom]
 			var p2 string
 			for uid := range roomClients {
 				if uid != client.UserID {
@@ -924,23 +933,16 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			h.mu.RUnlock()
 
 			if p2 == "" {
-				p2 = "peer"
+				return // games need both people in the call
 			}
 
-			session := h.GameManager.StartGame(client.ActiveRoom, payload.GameType, client.UserID, p2)
-			if payload.Data != nil {
-				if qRaw, ok := payload.Data["question"].(map[string]interface{}); ok && qRaw["question"] != nil {
-					session.CustomData["question"] = qRaw
-				}
-				if cRaw, ok := payload.Data["card"].(map[string]interface{}); ok && cRaw["optionA"] != nil {
-					session.CustomData["card"] = cRaw
-				}
+			if session := h.GameManager.StartGame(activeRoom, payload.GameType, client.UserID, p2, payload.Data); session != nil {
+				h.broadcastToRoom(activeRoom, "game:update", session)
 			}
-			h.broadcastToRoom(client.ActiveRoom, "game:update", session)
 		} else {
-			session, err := h.GameManager.HandleAction(client.ActiveRoom, client.UserID, payload.ActionType, payload.Data)
+			session, err := h.GameManager.HandleAction(activeRoom, client.UserID, payload.ActionType, payload.Data)
 			if err == nil && session != nil {
-				h.broadcastToRoom(client.ActiveRoom, "game:update", session)
+				h.broadcastToRoom(activeRoom, "game:update", session)
 			}
 		}
 
@@ -949,29 +951,42 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			BlockedUserID string `json:"blockedUserId"`
 		}
 		if err := json.Unmarshal(msg.Payload, &payload); err == nil && payload.BlockedUserID != "" {
-			h.MatchEngine.AddBlock(client.UserID, payload.BlockedUserID)
 			blockerUUID, err1 := uuid.Parse(client.UserID)
 			blockedUUID, err2 := uuid.Parse(payload.BlockedUserID)
-			if err1 == nil && err2 == nil {
-				h.ModService.BlockUser(blockerUUID, blockedUUID)
+			if err1 != nil || err2 != nil || blockerUUID == blockedUUID {
+				client.SendJSON("safety:alert", map[string]string{
+					"message": "Invalid block request.",
+				})
+				return
 			}
-			h.TrustEngine.UpdateTrustScore(blockerUUID, -1, "blocked_user")
+			h.MatchEngine.AddBlock(blockerUUID.String(), blockedUUID.String())
+			if _, err := h.ModService.BlockUser(blockerUUID, blockedUUID); err == nil {
+				h.TrustEngine.UpdateTrustScore(blockedUUID, -1, "blocked_by_user")
+			}
 
-			// Immediately disconnect active room
+			// Immediately disconnect active room for everyone in it
 			h.mu.Lock()
-			if client.ActiveRoom != "" {
-				if roomClients, exists := h.Rooms[client.ActiveRoom]; exists {
-					for _, peer := range roomClients {
+			activeRoom := client.ActiveRoom
+			if activeRoom != "" {
+				if roomClients, exists := h.Rooms[activeRoom]; exists {
+					for uid, peer := range roomClients {
+						if uid == client.UserID {
+							continue
+						}
+						peer.ActiveRoom = ""
 						peer.SendJSON("match:peer_left", map[string]string{
 							"userId": client.UserID,
 							"reason": "blocked",
 						})
 					}
-					delete(h.Rooms, client.ActiveRoom)
+					h.deleteRoomLocked(activeRoom)
 				}
 				client.ActiveRoom = ""
 			}
 			h.mu.Unlock()
+			if activeRoom != "" {
+				h.finalizeConversation(activeRoom)
+			}
 
 			client.SendJSON("safety:alert", map[string]string{
 				"message": "User blocked successfully. You will never match with this user again.",
@@ -1102,6 +1117,115 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 			}
 		}
 	}
+}
+
+// deleteRoomLocked removes a room and discards its game. Caller must hold h.mu.
+func (h *Hub) deleteRoomLocked(roomName string) {
+	delete(h.Rooms, roomName)
+	h.GameManager.EndGame(roomName)
+}
+
+// activeRoomOf returns the client's current room. ActiveRoom is mutated under h.mu
+// from other goroutines (matchmaking callback, peers), so reads must hold the lock too.
+func (h *Hub) activeRoomOf(c *Client) string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return c.ActiveRoom
+}
+
+// leaveActiveRoom removes the client from its current room (if any), notifies the
+// remaining peers, garbage-collects empty rooms and finalizes the conversation.
+func (h *Hub) leaveActiveRoom(client *Client, reason string) {
+	h.mu.Lock()
+	activeRoom := client.ActiveRoom
+	if activeRoom != "" {
+		if roomClients, exists := h.Rooms[activeRoom]; exists {
+			delete(roomClients, client.UserID)
+			for _, peer := range roomClients {
+				peer.SendJSON("match:peer_left", map[string]string{
+					"userId": client.UserID,
+					"reason": reason,
+				})
+			}
+			if len(roomClients) == 0 {
+				h.deleteRoomLocked(activeRoom)
+			}
+		}
+		client.ActiveRoom = ""
+	}
+	h.mu.Unlock()
+	h.finalizeConversation(activeRoom)
+}
+
+// enqueueClient builds a matchmaking ticket from the client payload, overriding every
+// server-authoritative field (identity, trust score, country, ticket ID) so clients
+// cannot spoof them, and submits it to the matchmaking engine.
+func (h *Hub) enqueueClient(client *Client, rawPayload json.RawMessage) {
+	var ticket matchmaking.MatchTicket
+	if err := json.Unmarshal(rawPayload, &ticket); err != nil {
+		return
+	}
+	ticket.TicketID = ""
+	ticket.QueuedAt = 0
+	ticket.BlockList = nil
+	ticket.RecentList = nil
+	ticket.TrustScore = 0
+	ticket.CountryCode = ""
+	ticket.UserID = client.UserID
+	ticket.Username = client.Username
+	ticket.AvatarID = client.AvatarID
+	switch ticket.Mode {
+	case matchmaking.ModeVoice, matchmaking.ModeText, matchmaking.ModeMystery:
+	default:
+		ticket.Mode = matchmaking.ModeVoice
+	}
+	// Only today's topic counts; stale or made-up topics are ignored
+	if !topics.IsToday(ticket.Preferences.Topic, time.Now()) {
+		ticket.Preferences.Topic = ""
+	}
+
+	// Overwrite TrustScore and CountryCode directly from database user
+	if uUUID, err := uuid.Parse(client.UserID); err == nil {
+		if dbUser, err := auth.GetUserByID(uUUID); err == nil && dbUser != nil {
+			ticket.TrustScore = dbUser.TrustScore
+			ticket.CountryCode = dbUser.CountryCode
+			if dbUser.AvatarID != "" {
+				ticket.AvatarID = dbUser.AvatarID
+			}
+		}
+	}
+	if ticket.TrustScore == 0 {
+		ticket.TrustScore = 100
+	}
+
+	h.MatchEngine.JoinQueue(&ticket)
+	telemetry.Monitor.RecordEvent(telemetry.EventMatchQueue)
+	client.SendJSON("queue:status", map[string]interface{}{
+		"status":  "queued",
+		"mode":    ticket.Mode,
+		"message": "Finding someone worth talking to...",
+	})
+}
+
+// takeInvite atomically removes and returns a pending invite that satisfies match.
+// When callID is given it is looked up directly; otherwise the first matching invite wins.
+func (h *Hub) takeInvite(callID string, match func(*DirectCallInvite) bool) *DirectCallInvite {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if callID != "" {
+		if inv, ok := h.PendingInvites[callID]; ok && inv != nil && match(inv) {
+			delete(h.PendingInvites, callID)
+			return inv
+		}
+		return nil
+	}
+	for cid, inv := range h.PendingInvites {
+		if inv != nil && match(inv) {
+			delete(h.PendingInvites, cid)
+			return inv
+		}
+	}
+	return nil
 }
 
 func (h *Hub) broadcastToRoom(roomName, msgType string, payload interface{}) {

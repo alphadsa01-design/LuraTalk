@@ -83,6 +83,17 @@ Base URL: `http://localhost:8080/api/v1`
   }
   ```
 
+### Topic of the Day
+- **Endpoint**: `GET /topics/today` (public, cacheable for 5 minutes)
+- **Response**:
+  ```json
+  {
+    "topic": { "id": "best-trip", "emoji": "✈️", "title": "Best trip ever", "prompt": "Where's the best place you've ever been?" },
+    "changesAt": "2026-11-12T00:00:00Z"
+  }
+  ```
+- To opt in, send `preferences.topic` (the topic `id`) with `queue:join` / `match:next`. The server ignores any value that is not today's topic. Two opted-in users get a strong matching bonus (never a hard filter), and their `match:found` payload includes the shared `topic`.
+
 ---
 
 ## 4. Friends & Memories

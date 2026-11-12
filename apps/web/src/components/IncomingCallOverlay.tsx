@@ -111,14 +111,14 @@ export default function IncomingCallOverlay() {
   const handleReject = () => {
     sounds.stopIncomingRingtone();
     if (!incomingCall) return;
-    socketClient.rejectDirectCall(incomingCall.callerId);
+    socketClient.rejectDirectCall(incomingCall.callerId, incomingCall.callId);
     setIncomingCall(null);
   };
 
   const handleBlock = () => {
     sounds.stopIncomingRingtone();
     if (!incomingCall) return;
-    socketClient.blockDirectCall(incomingCall.callerId);
+    socketClient.blockDirectCall(incomingCall.callerId, incomingCall.callId);
     setIncomingCall(null);
   };
 

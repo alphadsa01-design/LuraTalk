@@ -46,6 +46,8 @@ export interface UserState {
   enableAiAssistant: boolean;
   enableLiveTranslation: boolean;
   targetTranslationLanguage: string;
+  /** ID of the topic of the day the user opted into (ignored by the server once the day changes) */
+  topicOptInId: string | null;
 
   setAuth: (token: string, user: any) => void;
   setAvatar: (avatarId: string, seed?: string) => void;
@@ -73,6 +75,7 @@ export const useUserStore = create<UserState>()(
       enableAiAssistant: true,
       enableLiveTranslation: false,
       targetTranslationLanguage: 'es',
+      topicOptInId: null,
 
       setAuth: (token, user) => {
         const seed = user?.avatarSeed || user?.username || 'Felix';
@@ -135,6 +138,7 @@ export const useUserStore = create<UserState>()(
         enableAiAssistant: state.enableAiAssistant,
         enableLiveTranslation: state.enableLiveTranslation,
         targetTranslationLanguage: state.targetTranslationLanguage,
+        topicOptInId: state.topicOptInId,
       }),
     }
   )

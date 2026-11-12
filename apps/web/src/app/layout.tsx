@@ -4,6 +4,7 @@ import './globals.css';
 import Navbar from '@/components/Navbar';
 import FloatingCallOverlay from '@/components/FloatingCallOverlay';
 import IncomingCallOverlay from '@/components/IncomingCallOverlay';
+import RematchPrompt from '@/components/RematchPrompt';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -133,6 +134,7 @@ export default function RootLayout({
         <main className="flex-1 relative z-10 w-full max-w-full overflow-x-hidden">{children}</main>
         <FloatingCallOverlay />
         <IncomingCallOverlay />
+        <RematchPrompt />
       </body>
     </html>
   );
