@@ -38,6 +38,8 @@ type Hub struct {
 	Clients         map[string]*Client            // userID -> *Client
 	Rooms           map[string]map[string]*Client  // roomName -> userID -> *Client
 	PendingInvites  map[string]*DirectCallInvite  // callID -> *DirectCallInvite
+	RematchPairs    map[string]time.Time          // pairKey -> matchedAt ("Talk again?" eligibility)
+	RematchVotes    map[string]map[string]bool    // pairKey -> userID -> liked
 	Register        chan *Client
 	Unregister      chan *Client
 	Broadcast       chan []byte
@@ -64,6 +66,8 @@ func NewHub(
 		Clients:         make(map[string]*Client),
 		Rooms:           make(map[string]map[string]*Client),
 		PendingInvites:  make(map[string]*DirectCallInvite),
+		RematchPairs:    make(map[string]time.Time),
+		RematchVotes:    make(map[string]map[string]bool),
 		Register:        make(chan *Client),
 		Unregister:      make(chan *Client),
 		Broadcast:       make(chan []byte),
@@ -335,6 +339,8 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 
 	clientA.ActiveRoom = pair.RoomName
 	clientB.ActiveRoom = pair.RoomName
+	h.pruneRematchesLocked(time.Now())
+	h.recordRematchPairLocked(clientA.UserID, clientB.UserID, time.Now())
 	clientA.MysteryLevel = 1
 	clientB.MysteryLevel = 1
 
@@ -852,6 +858,9 @@ func (h *Hub) HandleClientMessage(client *Client, msg WSMessage) {
 		}
 
 		h.broadcastToRoomExcept(activeRoom, client.UserID, "chat:message", chatMsg)
+
+	case "rematch:vote":
+		h.handleRematchVote(client, msg.Payload)
 
 	case "chat:typing":
 		if activeRoom := h.activeRoomOf(client); activeRoom != "" {

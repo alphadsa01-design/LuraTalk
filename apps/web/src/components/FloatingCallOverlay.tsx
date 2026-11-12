@@ -3,6 +3,7 @@
 import React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallStore } from '@/stores/useCallStore';
+import { offerRematchForEndedCall } from '@/stores/useRematchStore';
 import { webrtcEngine } from '@/lib/webrtc';
 import { socketClient } from '@/lib/socket';
 import {
@@ -41,6 +42,8 @@ export default function FloatingCallOverlay() {
   React.useEffect(() => {
     const handlePeerDisconnect = () => {
       if (useCallStore.getState().status === 'matched') {
+        const { peer, roomName, callDuration } = useCallStore.getState();
+        offerRematchForEndedCall(peer, roomName, callDuration || 0, false);
         webrtcEngine.cleanup();
         resetCall();
         useCallStore.getState().setStatus('idle');
@@ -65,6 +68,8 @@ export default function FloatingCallOverlay() {
   };
 
   const handleEndCall = () => {
+    const { peer, roomName, callDuration } = useCallStore.getState();
+    offerRematchForEndedCall(peer, roomName, callDuration || 0, false);
     webrtcEngine.cleanup();
     socketClient.send('call:end', {});
     socketClient.leaveQueue();

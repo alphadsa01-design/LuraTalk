@@ -26,6 +26,7 @@ All messages follow the envelope format:
 | `friend:request` | `friendId` | Sends mutual friend request |
 | `safety:block` | `blockedUserId` | Blocks user and immediately disconnects |
 | `safety:report` | `reportedUserId`, `reason`, `description` | Submits moderation report |
+| `rematch:vote` | `peerId`, `liked` | Private "Talk again?" vote after a random call. Only valid for a pair matched in the last 30 minutes; `liked: false` withdraws a vote. The peer is never told about a one-sided vote |
 
 ---
 
@@ -42,3 +43,5 @@ All messages follow the envelope format:
 | `game:update` | `gameId`, `gameType`, `turn`, `status`, `board`, `scores`, `customData` | Synchronized game state |
 | `friend:update` | `status`, `friendId`, `message` | Friend request accepted |
 | `safety:alert` | `message` | Safety notification or rate limit warning |
+| `rematch:waiting` | `peerId` | Your ❤️ vote was saved; waiting to see if the peer feels the same (sent only to the voter) |
+| `rematch:mutual` | `peer` (`id`, `username`, `avatarId`) | Both users voted ❤️ — an accepted friendship was created for both |

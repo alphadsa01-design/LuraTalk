@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useUserStore, getDicebearAvatarUrl, AVATAR_PRESETS } from '@/stores/useUserStore';
 import { useCallStore } from '@/stores/useCallStore';
+import { offerRematchForEndedCall } from '@/stores/useRematchStore';
 import { useGameStore } from '@/stores/useGameStore';
 import { socketClient } from '@/lib/socket';
 import { getOrCreateAnonymousSession } from '@/lib/api';
@@ -258,6 +259,7 @@ function MatchPageContent() {
 
     const recordCallToLocalStorage = () => {
       const state = useCallStore.getState();
+      offerRematchForEndedCall(state.peer, state.roomName, state.callDuration || 0, friendRequestedRef.current);
       if (state.peer) {
         saveLocalCallHistoryItem({
           id: state.matchId || `call_${Date.now()}`,
@@ -451,6 +453,7 @@ function MatchPageContent() {
 
   const handleNextMatch = () => {
     const state = useCallStore.getState();
+    offerRematchForEndedCall(state.peer, state.roomName, state.callDuration || 0, friendRequestedRef.current);
     if (state.peer) {
       saveLocalCallHistoryItem({
         id: state.matchId || `call_${Date.now()}`,
@@ -490,6 +493,7 @@ function MatchPageContent() {
 
   const handleLeaveCall = () => {
     const state = useCallStore.getState();
+    offerRematchForEndedCall(state.peer, state.roomName, state.callDuration || 0, friendRequestedRef.current);
     if (state.peer) {
       saveLocalCallHistoryItem({
         id: state.matchId || `call_${Date.now()}`,
