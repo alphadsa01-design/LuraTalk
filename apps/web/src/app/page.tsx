@@ -10,6 +10,7 @@ import { webrtcEngine } from '@/lib/webrtc';
 import { socketClient } from '@/lib/socket';
 import { sounds } from '@/lib/sounds';
 import { motion } from 'framer-motion';
+import TopicOfTheDay from '@/components/TopicOfTheDay';
 
 export default function LandingPage() {
   const router = useRouter();
@@ -143,6 +144,9 @@ export default function LandingPage() {
           </button>
         )}
       </motion.div>
+
+      {/* Topic of the day (opt-in matchmaking preference) */}
+      <TopicOfTheDay />
 
       {/* Thoughtful, Inspiring Quote Card */}
       <motion.div

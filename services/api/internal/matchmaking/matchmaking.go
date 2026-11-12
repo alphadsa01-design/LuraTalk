@@ -33,6 +33,7 @@ type UserPreferences struct {
 	EnableAiAssistant         bool     `json:"enableAiAssistant"`
 	EnableLiveTranslation     bool     `json:"enableLiveTranslation"`
 	TargetTranslationLanguage string   `json:"targetTranslationLanguage,omitempty"`
+	Topic                     string   `json:"topic,omitempty"` // opted-in topic of the day (validated server-side)
 }
 
 type MatchTicket struct {
@@ -444,6 +445,12 @@ func (e *MatchmakingEngine) calculateMatchScore(a, b *MatchTicket) (float64, []s
 		} else {
 			score += 5.0
 		}
+	}
+
+	// 4b. Topic of the day: strong (but soft) preference so opted-in users find each other
+	// without anyone being stuck in the queue waiting for a topic match
+	if a.Preferences.Topic != "" && a.Preferences.Topic == b.Preferences.Topic {
+		score += 25.0
 	}
 
 	// 5. Trust Score Normalization (+5 to +10 pts)

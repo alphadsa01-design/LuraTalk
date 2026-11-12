@@ -125,6 +125,7 @@ func main() {
 		// Public routes
 		api.Post("/auth/anonymous", h.CreateAnonymousSession)
 		api.Get("/stats/online", h.GetPublicStats)
+		api.Get("/topics/today", h.GetTodayTopic)
 		api.Get("/rooms", h.GetRooms)
 		api.Get("/media/{id}", uploadService.ServeMedia)
 

@@ -20,6 +20,7 @@ import (
 	"airtak/services/api/internal/moderation"
 	"airtak/services/api/internal/realtime"
 	"airtak/services/api/internal/telemetry"
+	"airtak/services/api/internal/topics"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -690,6 +691,20 @@ func (h *Handler) DeleteMemory(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+}
+
+// GetTodayTopic returns the shared topic of the day.
+func (h *Handler) GetTodayTopic(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	topic := topics.Today(now)
+	nextUTC := now.UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"topic":     topic,
+		"changesAt": nextUTC,
+	})
 }
 
 func (h *Handler) GetPublicStats(w http.ResponseWriter, r *http.Request) {

@@ -19,6 +19,7 @@ import (
 	"airtak/services/api/internal/models"
 	"airtak/services/api/internal/moderation"
 	"airtak/services/api/internal/telemetry"
+	"airtak/services/api/internal/topics"
 	"airtak/services/api/internal/trust"
 
 	"github.com/google/uuid"
@@ -432,6 +433,14 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 		pair.TicketB.Preferences.Intention, pair.TicketB.Preferences.Mood,
 	)
 
+	// Both opted into the same topic of the day: tell them what they're here to talk about
+	var sharedTopic interface{}
+	if t := pair.TicketA.Preferences.Topic; t != "" && t == pair.TicketB.Preferences.Topic {
+		if topic, ok := topics.ByID(t); ok {
+			sharedTopic = topic
+		}
+	}
+
 	// Notify Client A
 	clientA.SendJSON("match:found", map[string]interface{}{
 		"matchId":      pair.MatchID,
@@ -451,6 +460,7 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 			"mysteryLevel":    1,
 		},
 		"icebreakerSuggestion": icebreakerA,
+		"topic":                sharedTopic,
 	})
 
 	// Notify Client B
@@ -472,6 +482,7 @@ func (h *Hub) HandleMatchFound(pair *matchmaking.MatchedPair) {
 			"mysteryLevel":    1,
 		},
 		"icebreakerSuggestion": icebreakerB,
+		"topic":                sharedTopic,
 	})
 }
 
@@ -1168,6 +1179,10 @@ func (h *Hub) enqueueClient(client *Client, rawPayload json.RawMessage) {
 	case matchmaking.ModeVoice, matchmaking.ModeText, matchmaking.ModeMystery:
 	default:
 		ticket.Mode = matchmaking.ModeVoice
+	}
+	// Only today's topic counts; stale or made-up topics are ignored
+	if !topics.IsToday(ticket.Preferences.Topic, time.Now()) {
+		ticket.Preferences.Topic = ""
 	}
 
 	// Overwrite TrustScore and CountryCode directly from database user

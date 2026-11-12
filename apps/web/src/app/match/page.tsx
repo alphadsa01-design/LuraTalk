@@ -99,6 +99,7 @@ function MatchPageContent() {
     messages,
     isPeerTyping,
     icebreakerSuggestion,
+    topic: callTopic,
     liveTranslationCaption,
     isLocalScreenSharing,
     isRemoteScreenSharing,
@@ -300,6 +301,7 @@ function MatchPageContent() {
         intention,
         countryPreference,
         oneQuestionAnswer,
+        topic: useUserStore.getState().topicOptInId || undefined,
       });
     };
 
@@ -448,6 +450,7 @@ function MatchPageContent() {
       intention,
       countryPreference,
       oneQuestionAnswer,
+      topic: useUserStore.getState().topicOptInId || undefined,
     });
   };
 
@@ -488,6 +491,7 @@ function MatchPageContent() {
       intention,
       countryPreference,
       oneQuestionAnswer,
+      topic: useUserStore.getState().topicOptInId || undefined,
     });
   };
 
@@ -898,6 +902,17 @@ function MatchPageContent() {
                 peerAvatar={peer.avatarId}
                 onEndCall={handleLeaveCall}
               />
+            )}
+
+            {/* Topic of the day: both people opted in */}
+            {callTopic && (
+              <div className="glass-panel px-4 py-3 rounded-2xl border border-white/15 text-xs">
+                <div className="flex items-center gap-2 text-white font-semibold">
+                  <span aria-hidden="true">{callTopic.emoji}</span>
+                  <span>Today&rsquo;s topic: {callTopic.title}</span>
+                </div>
+                <p className="mt-1 text-neutral-300">{callTopic.prompt}</p>
+              </div>
             )}
 
             {/* AI Icebreaker Card (Clean, Unobtrusive, Single-Line Strip) */}

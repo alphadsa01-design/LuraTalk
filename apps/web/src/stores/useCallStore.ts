@@ -44,6 +44,8 @@ export interface CallState {
   messages: ChatMessage[];
   isPeerTyping: boolean;
   icebreakerSuggestion: string | null;
+  /** Topic of the day, when both people opted into it */
+  topic: { id: string; emoji: string; title: string; prompt: string } | null;
   liveTranslationCaption: string | null;
 
   isLocalScreenSharing: boolean;
@@ -91,6 +93,7 @@ export const useCallStore = create<CallState>((set) => ({
   messages: [],
   isPeerTyping: false,
   icebreakerSuggestion: null,
+  topic: null,
   liveTranslationCaption: null,
 
   isLocalScreenSharing: false,
@@ -113,6 +116,7 @@ export const useCallStore = create<CallState>((set) => ({
       livekitUrl: data.livekitUrl,
       isInitiator: data.isInitiator,
       icebreakerSuggestion: data.icebreakerSuggestion || null,
+      topic: data.topic || null,
       callDuration: 0,
       messages: [],
       isLocalScreenSharing: false,
@@ -171,6 +175,7 @@ export const useCallStore = create<CallState>((set) => ({
       messages: [],
       isPeerTyping: false,
       icebreakerSuggestion: null,
+      topic: null,
       liveTranslationCaption: null,
       isLocalScreenSharing: false,
       isRemoteScreenSharing: false,
