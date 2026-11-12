@@ -60,7 +60,7 @@ export default function RematchPrompt() {
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-x-0 bottom-0 z-50 pointer-events-none flex justify-center px-4 pb-4 sm:pb-6"
+        className="fixed inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] md:bottom-0 z-[60] pointer-events-none flex justify-center px-4 md:pb-6"
         role="dialog"
         aria-live="polite"
         aria-label={phase === 'mutual' ? 'New friend' : 'Talk again?'}
@@ -120,29 +120,28 @@ export default function RematchPrompt() {
               </div>
             )}
 
-            {phase === 'mutual' && (
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() => {
-                    dismiss();
-                    router.push('/friends');
-                  }}
-                  className="h-11 px-3 flex items-center gap-1.5 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60 transition-opacity"
-                >
-                  <Users className="w-4 h-4" />
-                  View friends
-                </button>
-                <button
-                  onClick={dismiss}
-                  className="w-11 h-11 flex items-center justify-center rounded-xl text-gray-400 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60 transition-colors"
-                  aria-label="Close"
-                  title="Close"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            )}
           </div>
+
+          {phase === 'mutual' && (
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                onClick={() => {
+                  dismiss();
+                  router.push('/friends');
+                }}
+                className="flex-1 h-11 px-4 flex items-center justify-center gap-2 rounded-xl bg-white text-black text-sm font-semibold hover:bg-neutral-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 transition-colors"
+              >
+                <Users className="w-4 h-4" />
+                View friends
+              </button>
+              <button
+                onClick={dismiss}
+                className="h-11 px-4 rounded-xl border border-white/15 text-sm font-semibold text-neutral-300 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          )}
         </motion.div>
       </div>
     </AnimatePresence>
